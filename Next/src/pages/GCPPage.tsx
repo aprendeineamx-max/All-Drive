@@ -102,9 +102,12 @@ function FileExplorer({
         loadObjects(bucket, currentPrefix)
     }, [bucket, currentPrefix])
 
+    // Auto-refresh when sync path is set/changed (Local-First trigger)
     useEffect(() => {
-        loadObjects(bucket, currentPrefix)
-    }, [bucket, currentPrefix])
+        if (lastSyncPath) {
+            loadObjects(bucket, currentPrefix)
+        }
+    }, [lastSyncPath])
 
     const loadObjects = async (bucketName: string, prefix: string) => {
         setLoading(true)
@@ -221,7 +224,8 @@ function FileExplorer({
                     window.electronAPI.gcp.saveSession({ lastSyncPath: dirRes.data })
 
                     onToast(`Sincronización activa: ${dirRes.data}`, 'success')
-                    setTimeout(() => loadObjects(bucket, currentPrefix), 1000)
+                    // Immediate refresh to show local files (useEffect will also trigger)
+                    loadObjects(bucket, currentPrefix)
                 } else {
                     onToast(syncRes.error || 'Error al iniciar sync', 'error')
                 }
