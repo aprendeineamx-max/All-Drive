@@ -1,0 +1,7 @@
+{
+    "almacen-de-backups-cuenta-destino-EXAMPLE": {
+        "access_key": "YOUR_ACCESS_KEY_HERE",
+        "secret_key": "YOUR_SECRET_KEY_HERE",
+        "host_base": "lax1.vultrobjects.com"
+    }
+}
