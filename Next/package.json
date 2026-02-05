@@ -1,7 +1,7 @@
 {
-    "name": "vultrdrive-next",
+    "name": "all-drive",
     "version": "1.0.0",
-    "description": "VultrDrive Desktop - Modern Edition (Electron + React + Vite)",
+    "description": "All Drive - Modern Cloud Synchronization (Electron + React + Vite)",
     "main": "dist-electron/main.js",
     "scripts": {
         "dev": "vite",

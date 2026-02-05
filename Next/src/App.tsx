@@ -9,25 +9,18 @@ import {
     Minus,
     Square,
     X,
-    ChevronRight
+    ChevronRight,
+    LayoutDashboard
 } from 'lucide-react'
 
-// Type definitions for Electron API
-declare global {
-    interface Window {
-        electronAPI?: {
-            minimize: () => void
-            maximize: () => void
-            close: () => void
-            getVersion: () => Promise<string>
-            getAppName: () => Promise<string>
-        }
-    }
-}
+// Import pages
+import GCPPage from './pages/GCPPage'
+import SyncPanel from './pages/SyncPanel'
 
 // Sidebar navigation items
 const navItems = [
-    { id: 'dashboard', icon: Cloud, label: 'Dashboard' },
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { id: 'gcp', icon: Cloud, label: 'Google Cloud' },
     { id: 'sync', icon: RefreshCw, label: 'Sincronización' },
     { id: 'drives', icon: HardDrive, label: 'Unidades' },
     { id: 'files', icon: Folder, label: 'Archivos' },
@@ -42,13 +35,19 @@ function App() {
     const handleMaximize = () => window.electronAPI?.maximize()
     const handleClose = () => window.electronAPI?.close()
 
+    // Mock data for demonstration
+    const mockBuckets = [
+        { name: 'discos-azure-allison-everest' },
+        { name: 'backup-data-2024' }
+    ]
+
     return (
         <div className="h-screen w-screen bg-dark-900 flex flex-col overflow-hidden">
             {/* Custom Titlebar */}
             <div className="titlebar h-10 bg-dark-950/80 flex items-center justify-between px-4 border-b border-white/5">
                 <div className="flex items-center gap-2">
                     <Cloud className="w-5 h-5 text-accent-400" />
-                    <span className="text-sm font-medium text-white/80">VultrDrive Next</span>
+                    <span className="text-sm font-medium text-white/80">All Drive</span>
                 </div>
 
                 <div className="flex gap-1">
@@ -126,7 +125,8 @@ function App() {
                         transition={{ duration: 0.2 }}
                     >
                         {activeTab === 'dashboard' && <DashboardView />}
-                        {activeTab === 'sync' && <SyncView />}
+                        {activeTab === 'gcp' && <GCPPage />}
+                        {activeTab === 'sync' && <SyncPanel buckets={mockBuckets} />}
                         {activeTab === 'drives' && <DrivesView />}
                         {activeTab === 'files' && <FilesView />}
                         {activeTab === 'settings' && <SettingsView />}
@@ -219,23 +219,12 @@ function DashboardView() {
 }
 
 // Placeholder views
-function SyncView() {
-    return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-white">Sincronización</h1>
-            <div className="glass-card">
-                <p className="text-white/60">Configuración de sincronización en tiempo real...</p>
-            </div>
-        </div>
-    )
-}
-
 function DrivesView() {
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold text-white">Unidades</h1>
             <div className="glass-card">
-                <p className="text-white/60">Gestión de unidades montadas...</p>
+                <p className="text-white/60">Gestión de unidades montadas - Próximamente...</p>
             </div>
         </div>
     )
@@ -246,7 +235,7 @@ function FilesView() {
         <div className="space-y-6">
             <h1 className="text-2xl font-bold text-white">Archivos</h1>
             <div className="glass-card">
-                <p className="text-white/60">Explorador de archivos...</p>
+                <p className="text-white/60">Explorador de archivos - Próximamente...</p>
             </div>
         </div>
     )
@@ -257,7 +246,7 @@ function SettingsView() {
         <div className="space-y-6">
             <h1 className="text-2xl font-bold text-white">Configuración</h1>
             <div className="glass-card">
-                <p className="text-white/60">Ajustes de la aplicación...</p>
+                <p className="text-white/60">Ajustes de la aplicación - Próximamente...</p>
             </div>
         </div>
     )

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
+import { registerGCPHandlers } from './python-bridge'
 
 
 let mainWindow: BrowserWindow | null = null
@@ -44,7 +45,10 @@ ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('app:name', () => app.getName())
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+    registerGCPHandlers()
+    createWindow()
+})
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

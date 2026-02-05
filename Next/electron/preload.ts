@@ -12,8 +12,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVersion: () => ipcRenderer.invoke('app:version'),
     getAppName: () => ipcRenderer.invoke('app:name'),
 
-    // Future: Add cloud storage operations here
-    // listBuckets: () => ipcRenderer.invoke('storage:listBuckets'),
-    // mountDrive: (bucket: string, letter: string) => ipcRenderer.invoke('storage:mount', bucket, letter),
-    // etc.
+    // GCP Operations
+    gcp: {
+        listCredentials: () => ipcRenderer.invoke('gcp:listCredentials'),
+        authenticate: (credPath: string) => ipcRenderer.invoke('gcp:authenticate', credPath),
+        listBuckets: () => ipcRenderer.invoke('gcp:listBuckets'),
+        listObjects: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:listObjects', bucket, prefix),
+        mountBucket: (bucket: string, drive: string) => ipcRenderer.invoke('gcp:mountBucket', bucket, drive),
+        unmountDrive: (drive: string) => ipcRenderer.invoke('gcp:unmountDrive', drive),
+        startSync: (localPath: string, bucketName: string) => ipcRenderer.invoke('gcp:startSync', localPath, bucketName),
+        openDirectory: () => ipcRenderer.invoke('gcp:openDirectory')
+    }
 })
