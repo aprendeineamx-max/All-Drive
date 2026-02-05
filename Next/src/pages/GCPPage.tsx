@@ -252,6 +252,18 @@ function FileExplorer({
                 })
             }
 
+            // FINAL SAFETY: Normalize names (Strip trailing slashes) to ensure Renderer works
+            finalFiles = finalFiles.map(f => ({
+                ...f,
+                name: f.name.replace(/[/\\]+$/, '')
+            }))
+
+            // FINAL SAFETY FILTER: Prevent ghost folders (empty names) from ANY source
+            finalFiles = finalFiles.filter(f => {
+                const displayName = f.name.split(/[/\\]/).pop()
+                return displayName && displayName.trim().length > 0
+            })
+
             setObjects(finalFiles)
         } catch (e) {
             console.error(e)
