@@ -96,7 +96,6 @@ function FileExplorer({
     setLastSyncPath: (path: string | null) => void
 }) {
     const [currentLocalPath, setCurrentLocalPath] = useState<string>('')  // Relative path within sync folder
-    const [currentPrefix, _setCurrentPrefix] = useState('') // Internal navigation state
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
@@ -125,7 +124,7 @@ function FileExplorer({
                         visiblePrefix = `${rootName}/${currentLocalPath}`.replace(/\\/g, '/')
                     }
                 } else {
-                    visiblePrefix = currentPrefix
+                    visiblePrefix = '' // Or currentLocalPath based prefix if non-sync view existed
                 }
 
                 // 2. Parse the syncing file path
@@ -182,7 +181,7 @@ function FileExplorer({
             }
         })
         return cleanup
-    }, [lastSyncPath, currentLocalPath, currentPrefix])
+    }, [lastSyncPath, currentLocalPath])
 
 
     // Load session and check auto-launch on mount
@@ -223,15 +222,33 @@ function FileExplorer({
 
     // Auto-refresh when sync path or subfolder changes (Local-First trigger)
     useEffect(() => {
-        loadObjects(bucket, currentPrefix)
-    }, [bucket, currentPrefix, lastSyncPath, currentLocalPath])
+        loadObjects(bucket, '')
+    }, [bucket, lastSyncPath, currentLocalPath])
 
-    const loadObjects = async (bucketName: string, prefix: string) => {
+    const loadObjects = async (bucketName: string, _ignorePrefix: string) => {
         setLoading(true)
         try {
+            // Determine active GCS prefix for the explorer view
+            let activeGcsPrefix = ''
+            if (lastSyncPath) {
+                const rootName = lastSyncPath.split(/[/\\]/).pop() || 'Desktop'
+                if (currentLocalPath === '') {
+                    activeGcsPrefix = '' // List root to find Desktop folder
+                } else if (currentLocalPath === rootName) {
+                    activeGcsPrefix = `${rootName}/`
+                } else {
+                    activeGcsPrefix = `${rootName}/${currentLocalPath}`.replace(/\/+/g, '/')
+                    if (activeGcsPrefix && !activeGcsPrefix.endsWith('/')) activeGcsPrefix += '/'
+                }
+            } else {
+                activeGcsPrefix = currentLocalPath ? `${currentLocalPath}/`.replace(/\/+/g, '/') : ''
+            }
+
+            console.log('Loading GCS with prefix:', activeGcsPrefix)
+
             // STRATEGY: Local-First (Google Drive Desktop Style)
             // 1. Get GCS Objects for status reference
-            const gcsResult = await electronAPI?.gcp.listObjects(bucketName, prefix)
+            const gcsResult = await electronAPI?.gcp.listObjects(bucketName, activeGcsPrefix)
             const gcsFiles: GCSObject[] = gcsResult?.success ? gcsResult.data : []
 
             let finalFiles: any[] = []
@@ -252,7 +269,6 @@ function FileExplorer({
 
                     // Add GCS files/folders that are NOT under the rootName prefix
                     gcsFiles.forEach(gcs => {
-                        // Strip trailing slash for comparison and display
                         const cleanGcsName = gcs.name.replace(/\/$/, '')
                         if (!cleanGcsName) return
 
@@ -262,22 +278,19 @@ function FileExplorer({
                         if (baseName !== rootName && !finalFiles.find(f => f.name === baseName)) {
                             finalFiles.push({
                                 ...gcs,
-                                name: baseName, // Use the top-level name
+                                name: baseName, // Use top-level name for Virtual Root display
                                 isLocal: false,
                                 syncState: 'synced'
                             })
                         }
                     })
-                } else {
-                    // INSIDE A FOLDER (Sync or not)
-                    // Calculate real local path relative to the synced folder
+                } else if (currentLocalPath === rootName || currentLocalPath.startsWith(rootName + '/')) {
+                    // INSIDE SYNCED FOLDER TREE
                     let relativePath = ''
                     if (currentLocalPath === rootName) {
                         relativePath = ''
-                    } else if (currentLocalPath.startsWith(rootName + '/')) {
-                        relativePath = currentLocalPath.substring(rootName.length + 1)
                     } else {
-                        relativePath = currentLocalPath
+                        relativePath = currentLocalPath.substring(rootName.length + 1)
                     }
 
                     const fullLocalPath = relativePath
@@ -290,47 +303,55 @@ function FileExplorer({
                     // Merge strategy
                     finalFiles = localItems.map((local: any) => {
                         // Match with GCS using full path
-                        const gcsPath = relativePath ? `${relativePath}/${local.name}` : local.name
+                        const gcsPath = relativePath
+                            ? `${rootName}/${relativePath}/${local.name}`.replace(/\/+/g, '/')
+                            : `${rootName}/${local.name}`.replace(/\/+/g, '/')
+
                         const gcsMatch = gcsFiles.find(g => {
                             const cleanG = g.name.replace(/\/$/, '')
-                            return cleanG === gcsPath || cleanG === rootName + '/' + gcsPath
+                            return cleanG === gcsPath
                         })
 
                         return {
                             ...local,
+                            name: gcsPath, // STORE FULL GCS PATH
                             contentType: local.contentType || 'application/octet-stream',
                             syncState: gcsMatch ? 'synced' : 'pending'
                         }
                     })
 
-                    // Add Cloud Only files/folders at this LEVEL
+                    // Add Cloud-Only files (Only those already fetched by prefix)
                     gcsFiles.forEach(gcs => {
                         const cleanG = gcs.name.replace(/\/$/, '')
-                        if (!cleanG || !cleanG.trim()) return
+                        const name = cleanG.split('/').pop() || cleanG
 
-                        const parts = cleanG.split('/')
-                        const gcsName = parts.pop() || cleanG
-                        const gcsPrefix = parts.join('/')
-
-                        // Check if this item belongs to the CURRENT prefix
-                        const currentPrefix = relativePath ? `${rootName}/${relativePath}` : rootName
-                        const matchesCurrentLevel = gcsPrefix === currentPrefix || (relativePath === '' && gcsPrefix === rootName)
-
-                        if (matchesCurrentLevel && gcsName && !finalFiles.find(f => f.name === gcsName)) {
+                        // If it's not in local, it's cloud-only
+                        if (!finalFiles.find(f => f.name === name)) {
                             finalFiles.push({
                                 ...gcs,
-                                name: gcsName,
-                                isLocal: false,
+                                name,
                                 syncState: 'synced'
                             })
+                        }
+                    })
+                } else {
+                    // INSIDE CLOUD-ONLY FOLDER (Outside sync root)
+                    finalFiles = gcsFiles.map(gcs => {
+                        return {
+                            ...gcs,
+                            name: gcs.name.replace(/\/$/, ''), // KEEP FULL GCS PATH
+                            syncState: 'synced'
                         }
                     })
                 }
             } else {
                 // Standard Cloud View (No local sync setup)
-                finalFiles = gcsFiles.filter(f => {
-                    const cleanName = f.name.replace(/\/$/, '').split('/').pop()
-                    return cleanName && cleanName.trim().length > 0
+                finalFiles = gcsFiles.map(gcs => {
+                    return {
+                        ...gcs,
+                        name: gcs.name.replace(/\/$/, ''), // KEEP FULL GCS PATH
+                        syncState: 'synced'
+                    }
                 })
             }
 
@@ -358,10 +379,11 @@ function FileExplorer({
     const handleUploadFile = async () => {
         setActionLoading(true)
         try {
-            const res = await electronAPI.gcp.uploadFile(bucket, currentPrefix)
+            const prefix = currentLocalPath ? `${currentLocalPath}/`.replace(/\/+/g, '/') : ''
+            const res = await electronAPI.gcp.uploadFile(bucket, prefix)
             if (res.success) {
                 onToast('Archivo subido correctamente', 'success')
-                await loadObjects(bucket, currentPrefix)
+                await loadObjects(bucket, '')
             } else if (!res.cancelled) {
                 onToast(res.error || 'Error al subir archivo', 'error')
             }
@@ -375,10 +397,11 @@ function FileExplorer({
     const handleUploadFolder = async () => {
         setActionLoading(true)
         try {
-            const res = await electronAPI.gcp.uploadFolder(bucket, currentPrefix)
+            const prefix = currentLocalPath ? `${currentLocalPath}/`.replace(/\/+/g, '/') : ''
+            const res = await electronAPI.gcp.uploadFolder(bucket, prefix)
             if (res.success) {
                 onToast(`Carpeta subida (${res.count} archivos)`, 'success')
-                await loadObjects(bucket, currentPrefix)
+                await loadObjects(bucket, '')
             } else if (!res.cancelled) {
                 onToast(res.error || 'Error al subir carpeta', 'error')
             }
@@ -405,7 +428,7 @@ function FileExplorer({
 
                     onToast(`Sincronización activa: ${dirRes.data}`, 'success')
                     // Immediate refresh to show local files (useEffect will also trigger)
-                    loadObjects(bucket, currentPrefix)
+                    loadObjects(bucket, '')
                 } else {
                     onToast(syncRes.error || 'Error al iniciar sync', 'error')
                 }
@@ -418,7 +441,8 @@ function FileExplorer({
     }
 
     // Selection Helpers
-    const toggleSelection = (name: string) => {
+    const toggleSelection = (name: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation()
         setSelectedFiles(prev => {
             const newSet = new Set(prev)
             if (newSet.has(name)) newSet.delete(name)
@@ -474,7 +498,7 @@ function FileExplorer({
         } finally {
             setActionLoading(false)
             // Final refresh to ensure consistency
-            loadObjects(bucket, currentPrefix)
+            loadObjects(bucket, '')
         }
     }
 
@@ -484,7 +508,7 @@ function FileExplorer({
         setCurrentLocalPath('')
         await electronAPI.gcp.saveSession({ lastSyncPath: null })
         onToast('Sincronización detenida', 'info')
-        loadObjects(bucket, currentPrefix)
+        loadObjects(bucket, '')
     }
 
     // Preview File Content
@@ -499,25 +523,13 @@ function FileExplorer({
         setActionLoading(false)
     }
 
-    const handleFileClick = (obj: any) => {
+    const handleFileAction = (obj: any) => {
         if (obj.contentType === 'directory') {
-            const newPath = currentLocalPath
-                ? `${currentLocalPath}/${obj.name}`.replace(/\/+/g, '/')
-                : obj.name
-            setCurrentLocalPath(newPath)
+            const path = obj.name.replace(/[/\\]+$/, '')
+            console.log('Navigating to:', path)
+            setCurrentLocalPath(path)
         } else {
-            // Reconstruct full GCS path for preview
-            let fullGcsPath = obj.name
-            if (lastSyncPath) {
-                if (currentLocalPath === '') {
-                    // In Virtual Root, obj.name might be the root folder itself if it's what we clicked
-                    // but for files inside gcs root it's just name
-                    fullGcsPath = obj.name
-                } else {
-                    fullGcsPath = `${currentLocalPath}/${obj.name}`.replace(/\/+/g, '/')
-                }
-            }
-            handlePreview(fullGcsPath)
+            handlePreview(obj.name)
         }
     }
 
@@ -583,38 +595,36 @@ function FileExplorer({
                             <Database className="text-indigo-400" size={20} />
                             {bucket}
                         </h2>
-                        <p className="text-xs text-white/50">{objects.length} archivos • {currentPrefix || 'Raíz'}</p>
+                        <p className="text-xs text-white/50">{objects.length} archivos • {currentLocalPath || 'Raíz'}</p>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
-                        <Button variant="secondary" size="sm" onClick={() => loadObjects(bucket, currentPrefix)} loading={loading}>
+                        <Button variant="secondary" size="sm" onClick={() => loadObjects(bucket, '')} loading={loading}>
                             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                         </Button>
                     </div>
                 </div>
 
                 {/* Breadcrumb Path Bar */}
-                {lastSyncPath && (
-                    <div className="flex items-center gap-1 bg-black/30 px-3 py-2 rounded-lg border border-white/10 text-sm text-white/70 overflow-x-auto">
-                        <HardDrive size={14} className="text-indigo-400 flex-shrink-0" />
-                        <span
-                            className="cursor-pointer hover:text-white"
-                            onClick={() => setCurrentLocalPath('')}
-                        >
-                            Raíz
-                        </span>
-                        {currentLocalPath && currentLocalPath.split(/[/\\]/).filter(Boolean).map((seg, i, arr) => (
-                            <React.Fragment key={i}>
-                                <ChevronRight size={12} className="text-white/30" />
-                                <span
-                                    className="cursor-pointer hover:text-white"
-                                    onClick={() => setCurrentLocalPath(arr.slice(0, i + 1).join('/'))}
-                                >
-                                    {seg}
-                                </span>
-                            </React.Fragment>
-                        ))}
-                    </div>
-                )}
+                <div className="flex items-center gap-1 bg-black/30 px-3 py-2 rounded-lg border border-white/10 text-sm text-white/70 overflow-x-auto">
+                    {lastSyncPath ? <HardDrive size={14} className="text-indigo-400 flex-shrink-0" /> : <Cloud size={14} className="text-indigo-400 flex-shrink-0" />}
+                    <span
+                        className="cursor-pointer hover:text-white"
+                        onClick={() => setCurrentLocalPath('')}
+                    >
+                        {lastSyncPath ? 'Raíz Local' : 'Bucket Raíz'}
+                    </span>
+                    {currentLocalPath && currentLocalPath.split(/[/\\]/).filter(Boolean).map((seg, i, arr) => (
+                        <React.Fragment key={i}>
+                            <ChevronRight size={12} className="text-white/30" />
+                            <span
+                                className="cursor-pointer hover:text-white"
+                                onClick={() => setCurrentLocalPath(arr.slice(0, i + 1).join('/'))}
+                            >
+                                {seg}
+                            </span>
+                        </React.Fragment>
+                    ))}
+                </div>
 
                 {/* Toolbar */}
                 <div className="flex flex-wrap items-center gap-2 bg-white/5 p-2 rounded-lg border border-white/10">
@@ -649,7 +659,7 @@ function FileExplorer({
                                 setActionLoading(true)
                                 onToast('Limpiando bucket...', 'info')
                                 await electronAPI.gcp.cleanBucket(bucket)
-                                loadObjects(bucket, currentPrefix)
+                                loadObjects(bucket, '')
                                 onToast('Bucket limpio', 'success')
                                 setActionLoading(false)
                             }
@@ -724,15 +734,42 @@ function FileExplorer({
                         </div>
                     ) : (
                         <>
-                            {/* Action Bar */}
-                            {selectedFiles.size > 0 && (
-                                <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg mb-2">
-                                    <span className="text-xs text-red-300">{selectedFiles.size} seleccionados</span>
-                                    <Button size="sm" variant="secondary" onClick={handleDeleteSelected} disabled={actionLoading} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border-red-500/30">
-                                        <Trash2 size={14} className="mr-1" /> Eliminar
-                                    </Button>
-                                </div>
-                            )}
+                            {/* Floating Action Bar */}
+                            <AnimatePresence>
+                                {selectedFiles.size > 0 && (
+                                    <motion.div
+                                        initial={{ y: 50, opacity: 0 }}
+                                        animate={{ y: 0, opacity: 1 }}
+                                        exit={{ y: 50, opacity: 0 }}
+                                        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 px-6 py-3 bg-gray-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl flex items-center gap-6"
+                                    >
+                                        <div className="flex items-center gap-2 border-r border-white/10 pr-6">
+                                            <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold text-white">
+                                                {selectedFiles.size}
+                                            </div>
+                                            <span className="text-xs text-white/60 font-medium">seleccionados</span>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleDeleteSelected}
+                                                disabled={actionLoading}
+                                                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-all border border-red-500/20 disabled:opacity-50"
+                                            >
+                                                <Trash2 size={14} />
+                                                Eliminar
+                                            </button>
+
+                                            <button
+                                                onClick={() => setSelectedFiles(new Set())}
+                                                className="px-4 py-1.5 rounded-full hover:bg-white/5 text-white/40 hover:text-white text-xs font-medium transition-all"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
 
                             {viewType === 'grid' ? (
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -740,8 +777,15 @@ function FileExplorer({
                                         <motion.div
                                             key={i}
                                             whileHover={{ scale: 1.02 }}
-                                            onClick={() => handleFileClick(obj)}
-                                            className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
+                                            onClick={() => toggleSelection(obj.name)}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation()
+                                                handleFileAction(obj)
+                                            }}
+                                            className={`p-4 border rounded-xl transition-all flex flex-col items-center gap-3 text-center cursor-pointer group ${selectedFiles.has(obj.name)
+                                                ? 'bg-indigo-500/20 border-indigo-500/50'
+                                                : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20'
+                                                }`}
                                         >
                                             <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
                                                 {obj.contentType === 'directory' ? <Folder size={24} className="text-yellow-500" /> : <FileText size={24} />}
@@ -802,14 +846,19 @@ function FileExplorer({
                                         {filteredObjects.map((obj, i) => (
                                             <tr
                                                 key={i}
-                                                className="hover:bg-white/5 group transition-colors cursor-pointer"
+                                                className={`transition-colors cursor-pointer border-b border-white/5 ${selectedFiles.has(obj.name)
+                                                    ? 'bg-indigo-500/10 hover:bg-indigo-500/15'
+                                                    : 'hover:bg-white/5'
+                                                    }`}
                                                 onClick={(e) => {
-                                                    // Don't trigger if clicking checkbox
+                                                    // Single click toggles selection
                                                     if ((e.target as HTMLElement).tagName === 'INPUT') return
-                                                    handleFileClick(obj)
+                                                    toggleSelection(obj.name)
                                                 }}
-                                                onDoubleClick={() => {
-                                                    handleFileClick(obj)
+                                                onDoubleClick={(e) => {
+                                                    // Double click triggers folder entry or file preview
+                                                    e.stopPropagation()
+                                                    handleFileAction(obj)
                                                 }}
                                             >
                                                 <td className="px-2 py-2">
