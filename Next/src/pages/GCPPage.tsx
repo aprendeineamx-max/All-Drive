@@ -358,7 +358,7 @@ function FileExplorer({
     )
 
     return (
-        <div className="space-y-4 h-full flex flex-col">
+        <div className="space-y-4 h-full flex flex-col pb-10">
             <div className="flex flex-col gap-4 mb-2">
                 {/* Header Top */}
                 <div className="flex items-center gap-4">
@@ -457,17 +457,7 @@ function FileExplorer({
                     </div>
                 </div>
 
-                {/* Active Sync Indicator (Google Drive Style) */}
-                {lastSyncPath && (
-                    <div className="bg-indigo-500/10 border border-indigo-500/20 px-4 py-2 rounded-lg flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            <span className="text-xs text-indigo-200">
-                                Sincronizando: <span className="font-mono text-white/60">{lastSyncPath}</span>
-                            </span>
-                        </div>
-                    </div>
-                )}
+
             </div>
 
             <GlassCard className="flex-1 overflow-hidden p-0 border-0 bg-black/20">
@@ -638,29 +628,22 @@ function GlassControlCenter({
         }
     }, [logs, isMinimized])
 
+    if (isMinimized) return null // Handled by SyncFooter
+
     return (
         <motion.div
             layout
-            initial={{ y: 100, opacity: 0 }}
-            animate={{
-                y: 0,
-                opacity: 1,
-                height: isMinimized ? '44px' : '260px',
-                width: isMinimized ? '320px' : '100%',
-            }}
-            className={`fixed bottom-0 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isMinimized ? 'right-6 bottom-6' : 'left-0 right-0 p-4 pt-0'} z-40`}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed bottom-10 left-0 right-0 p-4 z-40"
         >
             <GlassCard
-                className={`h-full flex flex-col shadow-2xl overflow-hidden p-0 transition-all duration-500
-                    ${isMinimized
-                        ? 'rounded-[2rem] border-white/20 bg-indigo-600/20 backdrop-blur-2xl ring-1 ring-white/10 hover:ring-white/30 hover:bg-indigo-600/30'
-                        : 'border-white/10 bg-black/60 backdrop-blur-3xl'
-                    }`}
+                className="h-[300px] flex flex-col shadow-2xl overflow-hidden p-0 border-white/10 bg-black/60 backdrop-blur-3xl rounded-t-2xl border-b-0"
             >
-                {/* Header */}
                 <div
-                    className="flex items-center justify-between p-3 cursor-pointer bg-white/5 group"
-                    onClick={() => setIsMinimized(!isMinimized)}
+                    className="flex items-center justify-between p-3 bg-white/5 border-b border-white/10"
                 >
                     <div className="flex items-center gap-3">
                         <div className="relative">
@@ -696,9 +679,10 @@ function GlassControlCenter({
                             </button>
                         )}
                         <button
+                            onClick={() => setIsMinimized(true)}
                             className="p-1.5 hover:bg-white/10 rounded-lg text-white/30 hover:text-white transition-colors"
                         >
-                            {isMinimized ? <ChevronRight className="-rotate-90" size={16} /> : <ChevronRight className="rotate-90" size={16} />}
+                            <ChevronRight className="rotate-90" size={16} />
                         </button>
                         {!isMinimized && (
                             <button
@@ -1013,9 +997,20 @@ export default function GCPPage() {
                     </AnimatePresence>
                 </div>
 
+                {/* Sync Footer & Status Bar */}
+                <SyncFooter
+                    lastSyncPath={lastSyncPath}
+                    logsCount={logs.length}
+                    uploadingCount={Object.values(syncStatuses).filter(s => s === 'uploading').length}
+                    showLogs={showLogs}
+                    setShowLogs={setShowLogs}
+                    isMinimized={isTerminalMinimized}
+                    setIsMinimized={setIsTerminalMinimized}
+                />
+
                 {/* Glass Control Center Overlay */}
                 <AnimatePresence>
-                    {showLogs && (
+                    {(showLogs && !isTerminalMinimized) && (
                         <GlassControlCenter
                             logs={logs}
                             syncStatuses={syncStatuses}
@@ -1027,6 +1022,52 @@ export default function GCPPage() {
                     )}
                 </AnimatePresence>
             </>
+        )
+    }
+
+    // New Component: Footer Status Bar
+    function SyncFooter({
+        lastSyncPath,
+        logsCount,
+        uploadingCount,
+        showLogs,
+        setShowLogs,
+        isMinimized,
+        setIsMinimized
+    }: any) {
+        return (
+            <div className="fixed bottom-0 left-0 right-0 h-10 bg-indigo-950/40 backdrop-blur-md border-t border-white/5 z-50 px-4 flex items-center justify-between safe-area-bottom">
+                <div className="flex items-center gap-4">
+                    {lastSyncPath ? (
+                        <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${uploadingCount > 0 ? 'bg-indigo-400 animate-pulse' : 'bg-green-500'}`} />
+                            <span className="text-[10px] text-white/40 uppercase tracking-tighter font-medium">Sincronizando:</span>
+                            <span className="text-[10px] text-indigo-300/80 font-mono truncate max-w-sm" title={lastSyncPath}>
+                                {lastSyncPath}
+                            </span>
+                        </div>
+                    ) : (
+                        <span className="text-[10px] text-white/20 uppercase tracking-tighter">Sin carpeta sincronizada</span>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => {
+                            if (!showLogs) setShowLogs(true)
+                            setIsMinimized(!isMinimized)
+                        }}
+                        className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all group ${(showLogs && !isMinimized) ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-white/5 text-white/40'
+                            }`}
+                    >
+                        <RefreshCw size={12} className={uploadingCount > 0 ? 'animate-spin' : ''} />
+                        <span className="text-[10px] uppercase font-bold tracking-widest group-hover:text-white transition-colors">
+                            {uploadingCount > 0 ? `Subiendo ${uploadingCount}` : 'Consola'}
+                        </span>
+                        {logsCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
+                    </button>
+                </div>
+            </div>
         )
     }
 
