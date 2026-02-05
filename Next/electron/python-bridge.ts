@@ -487,6 +487,32 @@ try:
                 log_event(file_path, "error", str(e))
                 return False
 
+        def delete_object(self, bucket_name, relative_path):
+            try:
+                # Normalize path for GCS
+                folder_name = os.path.basename(self.root_path)
+                blob_name = f"{folder_name}/{relative_path}".replace(os.sep, '/')
+                
+                bucket = self.client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                
+                # Check if it's a folder (prefix) deletion
+                # GCS is flat, but for "directory" placeholders we just delete the blob
+                if blob.exists():
+                    blob.delete()
+                
+                # Also handle recursive prefix deletion if it was a real folder
+                prefix = blob_name if blob_name.endswith('/') else blob_name + '/'
+                blobs_to_delete = list(bucket.list_blobs(prefix=prefix))
+                if blobs_to_delete:
+                    bucket.delete_blobs(blobs_to_delete)
+
+                log_event(relative_path, "deleted")
+                return True
+            except Exception as e:
+                log_event(relative_path, "error", str(e))
+                return False
+
     def scan_and_upload(adapter, bucket_name, root_path):
         print(json.dumps({"type": "sync_event", "status": "scanning", "message": "Iniciando escaneo inicial..."}))
         sys.stdout.flush()

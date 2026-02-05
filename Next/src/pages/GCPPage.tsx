@@ -160,23 +160,33 @@ function FileExplorer({
 
                 // 4. Determine if it's a file or folder at this level
                 const parts = relativePart.split('/')
-                const itemName = parts[0]
+                const basename = parts[0]
                 const isDirectory = parts.length > 1
 
-                // 5. Optimistic Update
-                setObjects(prev => {
-                    // Prevent duplicates
-                    if (prev.find(p => p.name === itemName)) return prev
+                // Full GCS name for matching
+                const fullGcsName = `${visiblePrefix}/${basename}`.replace(/\/+/g, '/')
 
-                    const newObj: GCSObject = {
-                        name: itemName,
-                        size: 0,
-                        updated: new Date().toISOString(),
-                        contentType: isDirectory ? 'directory' : 'application/octet-stream',
-                        syncState: 'synced'
-                    }
-                    return [...prev, newObj]
-                })
+                // 5. Optimistic Update
+                if (event.status === 'deleted') {
+                    setObjects(prev => prev.filter(p => {
+                        const cleanP = p.name.replace(/\/$/, '')
+                        return cleanP !== fullGcsName
+                    }))
+                } else if (event.status === 'synced' || event.status === 'uploaded') {
+                    setObjects(prev => {
+                        // Prevent duplicates using full path
+                        if (prev.find(p => p.name.replace(/\/$/, '') === fullGcsName)) return prev
+
+                        const newObj: GCSObject = {
+                            name: fullGcsName,
+                            size: 0,
+                            updated: new Date().toISOString(),
+                            contentType: isDirectory ? 'directory' : 'application/octet-stream',
+                            syncState: 'synced'
+                        }
+                        return [...prev, newObj]
+                    })
+                }
 
             }
         })
@@ -323,13 +333,12 @@ function FileExplorer({
                     // Add Cloud-Only files (Only those already fetched by prefix)
                     gcsFiles.forEach(gcs => {
                         const cleanG = gcs.name.replace(/\/$/, '')
-                        const name = cleanG.split('/').pop() || cleanG
 
-                        // If it's not in local, it's cloud-only
-                        if (!finalFiles.find(f => f.name === name)) {
+                        // Check if this GCS item was already included via local items
+                        if (!finalFiles.find(f => f.name === cleanG)) {
                             finalFiles.push({
                                 ...gcs,
-                                name,
+                                name: cleanG, // Use FULL GCS PATH
                                 syncState: 'synced'
                             })
                         }

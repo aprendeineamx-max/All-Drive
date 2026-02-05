@@ -23,9 +23,13 @@ class FileWatcher(FileSystemEventHandler):
         if not event.is_directory:
             self._queue_upload(event.src_path, "modified")
 
+    def on_deleted(self, event):
+        self._queue_upload(event.src_path, "deleted", is_dir=event.is_directory)
+
     def _queue_upload(self, file_path, action, is_dir=False):
-        """Add file or folder to upload queue"""
-        if os.path.exists(file_path):
+        """Add file or folder to upload/delete queue"""
+        # If deleted, we don't check for existence
+        if action == "deleted" or os.path.exists(file_path):
             self.upload_queue.put((file_path, action, is_dir))
             if self.callback:
                 self.callback(f"Detected {action}: {os.path.basename(file_path)}")
@@ -46,18 +50,30 @@ class FileWatcher(FileSystemEventHandler):
                         self.callback(f"Syncing: {relative_path}")
                     
                     if is_dir:
-                        # Create folder placeholder
-                        success = self.s3_handler.create_folder(
-                            self.bucket_name,
-                            relative_path
-                        )
+                        # Create or delete folder placeholder
+                        if action == "deleted":
+                            success = self.s3_handler.delete_object(
+                                self.bucket_name,
+                                relative_path
+                            )
+                        else:
+                            success = self.s3_handler.create_folder(
+                                self.bucket_name,
+                                relative_path
+                            )
                     else:
-                        # Upload file
-                        success = self.s3_handler.upload_file(
-                            self.bucket_name, 
-                            file_path, 
-                            relative_path
-                        )
+                        # Upload or delete file
+                        if action == "deleted":
+                            success = self.s3_handler.delete_object(
+                                self.bucket_name,
+                                relative_path
+                            )
+                        else:
+                            success = self.s3_handler.upload_file(
+                                self.bucket_name, 
+                                file_path, 
+                                relative_path
+                            )
                     
                     if success and self.callback:
                         self.callback(f"✓ Synced: {relative_path}")
