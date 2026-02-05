@@ -4,7 +4,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process'
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 import path from 'path'
 
 // Ruta al directorio Legacy
@@ -131,6 +131,16 @@ print(json.dumps(result))
     // Autenticar con credenciales
     ipcMain.handle('gcp:authenticate', async (_, credPath: string) => {
         activeCredentialPath = credPath
+
+        // Persistir sesión
+        try {
+            const fs = require('fs')
+            const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
+            fs.writeFileSync(sessionPath, JSON.stringify({ lastCredentialPath: credPath }))
+        } catch (e) {
+            console.error('Error saving session:', e)
+        }
+
         const code = `
 ${getAuthHeader()}
 import os, json
@@ -247,6 +257,57 @@ print(json.dumps({'success': success, 'message': msg}))
         })
         if (!result.canceled && result.filePaths.length > 0) {
             return { success: true, data: result.filePaths[0] }
+        }
+        return { success: false }
+    })
+
+    // Cargar credenciales desde archivo
+    ipcMain.handle('gcp:uploadCredentials', async () => {
+        const { dialog } = require('electron')
+        const fs = require('fs')
+
+        const result = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'JSON', extensions: ['json'] }]
+        })
+
+        if (!result.canceled && result.filePaths.length > 0) {
+            try {
+                const sourcePath = result.filePaths[0]
+                const fileName = path.basename(sourcePath)
+                const destDir = path.join(LEGACY_PATH, 'Claves GCP')
+
+                if (!fs.existsSync(destDir)) {
+                    fs.mkdirSync(destDir, { recursive: true })
+                }
+
+                const destPath = path.join(destDir, fileName)
+                fs.copyFileSync(sourcePath, destPath)
+
+                return { success: true, data: destPath }
+            } catch (e: any) {
+                return { success: false, error: e.message }
+            }
+        }
+        return { success: false }
+    })
+
+    // Gestión de Sesión
+    const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
+    const fs = require('fs')
+
+    ipcMain.handle('gcp:loadSession', async () => {
+        try {
+            if (fs.existsSync(sessionPath)) {
+                const session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
+                if (session.lastCredentialPath) {
+                    // Restaurar autenticación automáticamente
+                    activeCredentialPath = session.lastCredentialPath
+                    return { success: true, data: session }
+                }
+            }
+        } catch (e) {
+            console.error('Error loading session:', e)
         }
         return { success: false }
     })

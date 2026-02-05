@@ -25,6 +25,8 @@ declare global {
                 unmountDrive: (drive: string) => Promise<{ success: boolean; data: any; error?: string }>
                 startSync: (localPath: string, bucketName: string) => Promise<{ success: boolean; data: any; error?: string }>
                 openDirectory: () => Promise<{ success: boolean; data?: string }>
+                uploadCredentials: () => Promise<{ success: boolean; data?: string; error?: string }>
+                loadSession: () => Promise<{ success: boolean; data?: any }>
             }
         }
     }
