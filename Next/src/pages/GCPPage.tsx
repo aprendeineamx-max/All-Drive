@@ -35,17 +35,48 @@ interface GCSObject {
     contentType: string
 }
 
+type SyncStatus = 'pending' | 'uploading' | 'synced'
+
+// Status Icon Component
+function StatusIcon({ status }: { status?: SyncStatus }) {
+    if (!status) return null
+
+    return (
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={status}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 1.5, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+            >
+                {status === 'pending' && (
+                    <div className="w-2 h-2 rounded-full bg-zinc-500 animate-pulse" />
+                )}
+                {status === 'uploading' && (
+                    <RefreshCw className="text-indigo-400 animate-spin" size={14} />
+                )}
+                {status === 'synced' && (
+                    <Cloud className="text-indigo-400 fill-indigo-400/20" size={14} />
+                )}
+            </motion.div>
+        </AnimatePresence>
+    )
+}
+
 // Sub-component: File Explorer (Full View)
 function FileExplorer({
     bucket,
     onClose,
     electronAPI,
-    onToast
+    onToast,
+    syncStatuses
 }: {
     bucket: string,
     onClose: () => void,
     electronAPI: any,
-    onToast: (msg: string, type: 'success' | 'error' | 'info') => void
+    onToast: (msg: string, type: 'success' | 'error' | 'info') => void,
+    syncStatuses: Record<string, SyncStatus>
 }) {
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
@@ -226,7 +257,12 @@ function FileExplorer({
                                     {filteredObjects.map((obj, i) => (
                                         <tr key={i} className="hover:bg-white/5 group transition-colors">
                                             <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
-                                                <FileText size={16} className="text-indigo-400" />
+                                                <div className="relative">
+                                                    <FileText size={16} className="text-indigo-400" />
+                                                    <div className="absolute -bottom-1 -right-1">
+                                                        <StatusIcon status={syncStatuses[obj.name]} />
+                                                    </div>
+                                                </div>
                                                 <span className="truncate max-w-[300px]">{obj.name}</span>
                                             </td>
                                             <td className="px-4 py-3 text-white/50 font-mono text-xs">
@@ -247,8 +283,11 @@ function FileExplorer({
                                         whileHover={{ scale: 1.02 }}
                                         className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
                                     >
-                                        <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all">
+                                        <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
                                             <FileText size={24} />
+                                            <div className="absolute top-0 right-0 p-1">
+                                                <StatusIcon status={syncStatuses[obj.name]} />
+                                            </div>
                                         </div>
                                         <div className="min-w-0 w-full">
                                             <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1">{obj.name}</p>
@@ -518,6 +557,7 @@ export default function GCPPage() {
                             onClose={() => setCurrentView('dashboard')}
                             electronAPI={window.electronAPI}
                             onToast={showToast}
+                            syncStatuses={syncStatuses}
                         />
                     </motion.div>
                 </AnimatePresence>

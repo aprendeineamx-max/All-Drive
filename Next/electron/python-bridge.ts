@@ -112,77 +112,102 @@ function runPythonCode(code: string, onLog?: LogCallback): Promise<PythonResult>
 
 /**
  * Ejecuta código Python inline y MANTIENE el proceso vivo (para sync/watchers)
+ * Incluye lógica de SUPERVISOR para auto-reinicio si falla.
  */
 let activeSyncProcess: ChildProcess | null = null
+let restartCount = 0
+const MAX_RESTARTS = 3
 
-function startBackgroundPython(code: string, onLog: LogCallback): Promise<PythonResult> {
+function startBackgroundPython(code: string, onLog: LogCallback, onEvent?: (event: any) => void): Promise<PythonResult> {
     return new Promise((resolve) => {
-        if (activeSyncProcess) {
-            activeSyncProcess.kill()
-            activeSyncProcess = null
-        }
-
-        const pythonProcess = spawn('python', ['-c', code], {
-            cwd: LEGACY_PATH,
-            env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-        })
-
-        activeSyncProcess = pythonProcess
-
-        let stdout = ''
-        let stderr = ''
         let hasResolved = false
 
-        pythonProcess.stdout.on('data', (data) => {
-            const str = data.toString()
-            stdout += str
-            if (onLog) onLog(str)
+        const launch = () => {
+            if (activeSyncProcess) {
+                activeSyncProcess.removeAllListeners()
+                activeSyncProcess.kill()
+            }
 
-            // Attempt to detect successful start JSON to resolve promise early
-            if (!hasResolved && str.includes('"success": true')) {
-                try {
-                    // Try to find the JSON line
-                    const lines = str.split('\n')
-                    const jsonLine = lines.find(l => l.includes('"success": true'))
-                    if (jsonLine) {
-                        const data = JSON.parse(jsonLine)
-                        hasResolved = true
-                        resolve({ success: true, data })
+            const pythonProcess = spawn('python', ['-u', '-c', code], {
+                cwd: LEGACY_PATH,
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+            })
+
+            activeSyncProcess = pythonProcess
+
+            let stdout = ''
+            let stderr = ''
+
+            pythonProcess.stdout.on('data', (data) => {
+                const str = data.toString()
+                stdout += str
+
+                // Procesar línea por línea para buscar eventos JSON
+                str.split('\n').filter(l => l.trim()).forEach(line => {
+                    try {
+                        if (line.trim().startsWith('{') && line.trim().endsWith('}')) {
+                            const event = JSON.parse(line)
+                            if (onEvent) onEvent(event)
+
+                            if (!hasResolved && event.success === true) {
+                                hasResolved = true
+                                resolve({ success: true, data: event })
+                            }
+                        } else {
+                            if (onLog) onLog(line)
+                        }
+                    } catch (e) {
+                        if (onLog) onLog(line)
                     }
-                } catch (e) {
-                    // ignore parse error, wait more
+                })
+            })
+
+            pythonProcess.stderr.on('data', (data) => {
+                const str = data.toString()
+                stderr += str
+                if (onLog) onLog(`[STDERR] ${str}`)
+            })
+
+            pythonProcess.on('close', (code) => {
+                console.log(`Python process closed with code ${code}`)
+                if (code !== 0 && restartCount < MAX_RESTARTS) {
+                    restartCount++
+                    if (onLog) onLog(`[SYSTEM] Sync falló (Code ${code}). Reiniciando intento ${restartCount}...`)
+                    setTimeout(launch, 2000)
+                } else {
+                    activeSyncProcess = null
+                    if (!hasResolved) {
+                        restartCount = 0
+                        resolve({ success: false, error: stderr || `Process exited code ${code}` })
+                    }
                 }
-            }
-        })
+            })
 
-        pythonProcess.stderr.on('data', (data) => {
-            const str = data.toString()
-            stderr += str
-            if (onLog) onLog(`[STDERR] ${str}`)
-        })
+            pythonProcess.on('error', (err) => {
+                if (onLog) onLog(`[ERROR] ${err.message}`)
+                if (!hasResolved) {
+                    hasResolved = true
+                    resolve({ success: false, error: err.message })
+                }
+            })
+        }
 
-        pythonProcess.on('close', (code) => {
-            activeSyncProcess = null
-            if (!hasResolved) {
-                resolve({ success: false, error: stderr || `Process exited code ${code}` })
-            } else {
-                if (onLog) onLog(`[Process ended] Code: ${code}`)
-            }
-        })
+        launch()
 
-        // Safety timeout to resolve if no JSON appears but process runs
+        // Timeout de seguridad para el inicio
         setTimeout(() => {
             if (!hasResolved && activeSyncProcess) {
                 hasResolved = true
-                console.log('Background process started (assumed success)')
-                resolve({ success: true, data: { message: "Process started (timeout)" } })
+                console.log('Background process fallback resolution')
+                resolve({ success: true, data: { message: "Started (Timeout Fallback)" } })
             }
-        }, 5000)
+        }, 8000)
     })
 }
 
 function stopBackgroundPython() {
     if (activeSyncProcess) {
+        restartCount = MAX_RESTARTS + 1 // Evitar reinicio
         activeSyncProcess.kill()
         activeSyncProcess = null
         return true
@@ -323,15 +348,22 @@ print(json.dumps({'success': success, 'message': message}))
     // Iniciar sincronización
     ipcMain.handle('gcp:startSync', async (event, localPath: string, bucketName: string) => {
         const log = (msg: string) => event.sender.send('gcp:log', msg)
-
-        // Ensure path to Legacy/ is correct
-        const legacyLibPath = path.join(LEGACY_PATH, 'Legacy').replace(/\\/g, '/')
+        const onEvent = (evt: any) => event.sender.send('gcp:sync_event', evt)
 
         const code = `
 ${getAuthHeader()}
-import json, sys, time
-sys.path.insert(0, '${legacyLibPath}')
+import json, sys, time, os
 sys.path.insert(0, '.')
+
+def log_event(file, status, message=""):
+    print(json.dumps({
+        "type": "sync_event", 
+        "file": os.path.basename(file), 
+        "full_path": file,
+        "status": status,
+        "message": message
+    }))
+    sys.stdout.flush()
 
 try:
     from file_watcher import RealTimeSync
@@ -341,34 +373,46 @@ try:
         def __init__(self):
             self.client = storage.Client()
         def upload_file(self, bucket_name, file_path, object_name=None):
-            bucket = self.client.bucket(bucket_name)
-            blob = bucket.blob(object_name or file_path)
-            blob.upload_from_filename(file_path)
-            # Log printed to stdout is captured by Node
-            print(f"Uploaded: {file_path}") 
-            return True
+            log_event(file_path, "uploading")
+            try:
+                bucket = self.client.bucket(bucket_name)
+                blob = bucket.blob(object_name or file_path)
+                blob.upload_from_filename(file_path)
+                log_event(file_path, "synced")
+                return True
+            except Exception as e:
+                log_event(file_path, "error", str(e))
+                return False
 
-    print(json.dumps({'success': True, 'message': 'Initializing...'})) # Trigger early resolve
+    print(json.dumps({'success': True, 'message': 'Supervisor started'})) 
     sys.stdout.flush()
 
     adapter = GCPAdapter()
-    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}', callback=print)
+    # Capturamos logs de watchdog y los rebotamos como eventos
+    def watcher_callback(msg):
+        if "Detected" in msg:
+            # Detected created: file.txt
+            parts = msg.split(':')
+            if len(parts) > 1:
+                filename = parts[1].strip()
+                log_event(filename, "pending")
+        print(f"[WATCHER] {msg}")
+
+    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}', callback=watcher_callback)
     
     success, msg = sync.start()
     if success:
-        print(f"Sync Started: {msg}")
+        print(f"Sync Controller established: {msg}")
         sys.stdout.flush()
-        
-        # Keep alive loop
         while True:
-            time.sleep(1)
+            time.sleep(1) # Monitor heartbeat
     else:
-        print(f"Sync Failed to start: {msg}")
+        print(json.dumps({'success': False, 'error': msg}))
 
 except Exception as e:
-    print(f"Error: {str(e)}")
+    print(json.dumps({'success': False, 'error': str(e)}))
 `
-        return startBackgroundPython(code, log)
+        return startBackgroundPython(code, log, onEvent)
     })
 
     ipcMain.handle('gcp:stopSync', () => {

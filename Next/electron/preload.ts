@@ -30,8 +30,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         onLog: (callback: (message: string) => void) => {
             const subscription = (_: any, msg: string) => callback(msg)
             ipcRenderer.on('gcp:log', subscription)
-            // Return cleanup function
             return () => ipcRenderer.removeListener('gcp:log', subscription)
+        },
+        onSyncEvent: (callback: (event: any) => void) => {
+            const subscription = (_: any, evt: any) => callback(evt)
+            ipcRenderer.on('gcp:sync_event', subscription)
+            return () => ipcRenderer.removeListener('gcp:sync_event', subscription)
         },
         loadSession: () => ipcRenderer.invoke('gcp:loadSession')
     }

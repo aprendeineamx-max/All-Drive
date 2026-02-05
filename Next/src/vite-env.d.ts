@@ -31,6 +31,7 @@ declare global {
                 uploadFile: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
                 uploadFolder: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; count?: number; error?: string }>
                 onLog: (callback: (message: string) => void) => () => void
+                onSyncEvent: (callback: (event: any) => void) => () => void
                 loadSession: () => Promise<{ success: boolean; data?: any }>
             }
         }
