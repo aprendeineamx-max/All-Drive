@@ -172,7 +172,10 @@ function FileExplorer({
                     gcsFiles.forEach(gcs => {
                         // Strip trailing slash for comparison and display
                         const cleanGcsName = gcs.name.replace(/\/$/, '')
+                        if (!cleanGcsName) return
+
                         const baseName = cleanGcsName.split('/')[0]
+                        if (!baseName || !baseName.trim()) return
 
                         if (baseName !== rootName && !finalFiles.find(f => f.name === baseName)) {
                             finalFiles.push({
@@ -221,6 +224,8 @@ function FileExplorer({
                     // Add Cloud Only files/folders at this LEVEL
                     gcsFiles.forEach(gcs => {
                         const cleanG = gcs.name.replace(/\/$/, '')
+                        if (!cleanG || !cleanG.trim()) return
+
                         const parts = cleanG.split('/')
                         const gcsName = parts.pop() || cleanG
                         const gcsPrefix = parts.join('/')
@@ -241,7 +246,10 @@ function FileExplorer({
                 }
             } else {
                 // Standard Cloud View (No local sync setup)
-                finalFiles = gcsFiles
+                finalFiles = gcsFiles.filter(f => {
+                    const cleanName = f.name.replace(/\/$/, '').split('/').pop()
+                    return cleanName && cleanName.trim().length > 0
+                })
             }
 
             setObjects(finalFiles)
