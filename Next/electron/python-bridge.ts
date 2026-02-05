@@ -610,16 +610,19 @@ upload_folder()
     // --- NEW: Cleanup Suite Handlers ---
 
     // Eliminar archivo/objeto
-    ipcMain.handle('gcp:deleteObject', async (event, bucketName, objectName) => {
+    ipcMain.handle('gcp:deleteObject', async (event, bucketName: string, objectName: string) => {
+        // Use raw string in Python to handle backslashes correctly
+        const escapedName = objectName.replace(/\\/g, '\\\\')
         const code = `
 ${getAuthHeader()}
 from google.cloud import storage
 import json
 try:
-    print(f"Eliminando {objectName}...")
+    obj_name = "${escapedName}"
+    print(f"Eliminando {obj_name}...")
     client = storage.Client()
     bucket = client.bucket('${bucketName}')
-    blob = bucket.blob('${objectName}')
+    blob = bucket.blob(obj_name)
     blob.delete()
     print("Eliminado correctamente")
     print(json.dumps({'success': True}))
@@ -630,17 +633,21 @@ except Exception as e:
     })
 
     // Renombrar objeto
-    ipcMain.handle('gcp:renameObject', async (event, bucketName, oldName, newName) => {
+    ipcMain.handle('gcp:renameObject', async (event, bucketName: string, oldName: string, newName: string) => {
+        const safeOldName = oldName.replace(/\\/g, '/')
+        const safeNewName = newName.replace(/\\/g, '/')
         const code = `
 ${getAuthHeader()}
 from google.cloud import storage
 import json
 try:
-    print(f"Renombrando {oldName} -> {newName}...")
+    old = "${safeOldName}"
+    new = "${safeNewName}"
+    print(f"Renombrando {old} -> {new}...")
     client = storage.Client()
     bucket = client.bucket('${bucketName}')
-    blob = bucket.blob('${oldName}')
-    bucket.rename_blob(blob, '${newName}')
+    blob = bucket.blob(old)
+    bucket.rename_blob(blob, new)
     print("Renombrado correctamente")
     print(json.dumps({'success': True}))
 except Exception as e:
@@ -650,15 +657,17 @@ except Exception as e:
     })
 
     // Leer contenido (Preview)
-    ipcMain.handle('gcp:getFileContent', async (event, bucketName, objectName) => {
+    ipcMain.handle('gcp:getFileContent', async (event, bucketName: string, objectName: string) => {
+        const safeObjectName = objectName.replace(/\\/g, '/')
         const code = `
 ${getAuthHeader()}
 from google.cloud import storage
 import json
 try:
+    obj_name = "${safeObjectName}"
     client = storage.Client()
     bucket = client.bucket('${bucketName}')
-    blob = bucket.blob('${objectName}')
+    blob = bucket.blob(obj_name)
     
     # Read first 10KB for preview safety
     content = blob.download_as_text(start=0, end=10240) 
