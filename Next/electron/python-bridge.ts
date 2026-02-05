@@ -111,6 +111,86 @@ function runPythonCode(code: string, onLog?: LogCallback): Promise<PythonResult>
 }
 
 /**
+ * Ejecuta código Python inline y MANTIENE el proceso vivo (para sync/watchers)
+ */
+let activeSyncProcess: ChildProcess | null = null
+
+function startBackgroundPython(code: string, onLog: LogCallback): Promise<PythonResult> {
+    return new Promise((resolve) => {
+        if (activeSyncProcess) {
+            activeSyncProcess.kill()
+            activeSyncProcess = null
+        }
+
+        const pythonProcess = spawn('python', ['-c', code], {
+            cwd: LEGACY_PATH,
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        })
+
+        activeSyncProcess = pythonProcess
+
+        let stdout = ''
+        let stderr = ''
+        let hasResolved = false
+
+        pythonProcess.stdout.on('data', (data) => {
+            const str = data.toString()
+            stdout += str
+            if (onLog) onLog(str)
+
+            // Attempt to detect successful start JSON to resolve promise early
+            if (!hasResolved && str.includes('"success": true')) {
+                try {
+                    // Try to find the JSON line
+                    const lines = str.split('\n')
+                    const jsonLine = lines.find(l => l.includes('"success": true'))
+                    if (jsonLine) {
+                        const data = JSON.parse(jsonLine)
+                        hasResolved = true
+                        resolve({ success: true, data })
+                    }
+                } catch (e) {
+                    // ignore parse error, wait more
+                }
+            }
+        })
+
+        pythonProcess.stderr.on('data', (data) => {
+            const str = data.toString()
+            stderr += str
+            if (onLog) onLog(`[STDERR] ${str}`)
+        })
+
+        pythonProcess.on('close', (code) => {
+            activeSyncProcess = null
+            if (!hasResolved) {
+                resolve({ success: false, error: stderr || `Process exited code ${code}` })
+            } else {
+                if (onLog) onLog(`[Process ended] Code: ${code}`)
+            }
+        })
+
+        // Safety timeout to resolve if no JSON appears but process runs
+        setTimeout(() => {
+            if (!hasResolved && activeSyncProcess) {
+                hasResolved = true
+                console.log('Background process started (assumed success)')
+                resolve({ success: true, data: { message: "Process started (timeout)" } })
+            }
+        }, 5000)
+    })
+}
+
+function stopBackgroundPython() {
+    if (activeSyncProcess) {
+        activeSyncProcess.kill()
+        activeSyncProcess = null
+        return true
+    }
+    return false
+}
+
+/**
  * Registra los handlers IPC para GCP
  */
 export function registerGCPHandlers() {
