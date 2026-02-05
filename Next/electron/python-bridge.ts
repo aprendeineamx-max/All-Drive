@@ -101,7 +101,7 @@ export function registerGCPHandlers() {
     ipcMain.handle('gcp:listCredentials', async () => {
         const code = `
 import os, json, glob
-creds_path = os.path.join(os.path.dirname(__file__), 'Claves GCP')
+creds_path = os.path.join(os.getcwd(), 'Claves GCP')
 if not os.path.exists(creds_path):
     creds_path = 'Claves GCP'
 files = glob.glob(os.path.join(creds_path, '*.json'))
@@ -210,7 +210,7 @@ class GCPAdapter:
         blob.upload_from_filename(file_path)
         return True
 
-const adapter = GCPAdapter()
+adapter = GCPAdapter()
 sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}')
 success, msg = sync.start()
 print(json.dumps({'success': success, 'message': msg}))
