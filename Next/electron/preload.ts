@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         unmountDrive: (drive: string) => ipcRenderer.invoke('gcp:unmountDrive', drive),
         startSync: (localPath: string, bucketName: string) => ipcRenderer.invoke('gcp:startSync', localPath, bucketName),
         stopSync: () => ipcRenderer.invoke('gcp:stopSync'),
+        getDesktopPath: () => ipcRenderer.invoke('gcp:getDesktopPath'),
         openDirectory: () => ipcRenderer.invoke('gcp:openDirectory'),
         uploadCredentials: () => ipcRenderer.invoke('gcp:uploadCredentials'),
         uploadFile: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:uploadFile', bucket, prefix),

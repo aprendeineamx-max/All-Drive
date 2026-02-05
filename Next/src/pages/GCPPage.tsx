@@ -439,6 +439,37 @@ export default function GCPPage() {
         }
     }
 
+    const [hasAutoSynced, setHasAutoSynced] = useState(false)
+
+    useEffect(() => {
+        if (isAuthenticated && buckets.length > 0 && !hasAutoSynced) {
+            handleAutoSync()
+        }
+    }, [isAuthenticated, buckets, hasAutoSynced])
+
+    const handleAutoSync = async () => {
+        setHasAutoSynced(true)
+        try {
+            const desktopPath = await window.electronAPI.gcp.getDesktopPath()
+            const targetBucket = buckets[0].name
+
+            showToast(`🚀 Iniciando AUTO-SYNC del Escritorio a ${targetBucket}...`, 'info')
+
+            // Auto open logs
+            setShowLogs(true)
+
+            const syncRes = await window.electronAPI.gcp.startSync(desktopPath, targetBucket)
+            if (syncRes.success) {
+                showToast(`Sincronización activa: ${desktopPath}`, 'success')
+            } else {
+                showToast(syncRes.error || 'Error al iniciar sync automática', 'error')
+            }
+        } catch (e: any) {
+            console.error("Auto sync failed", e)
+            showToast("Falló la auto-sincronización", 'error')
+        }
+    }
+
     const handlePreviewClick = async (bucketName: string) => {
         if (selectedPreviewBucket === bucketName) {
             setSelectedPreviewBucket(null) // Toggle off
