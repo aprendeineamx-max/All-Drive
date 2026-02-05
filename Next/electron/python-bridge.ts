@@ -345,7 +345,35 @@ print(json.dumps({'success': success, 'message': message}))
         return runPythonCode(code)
     })
 
-    // Iniciar sincronización
+    // Listar contenido de carpeta local (para merge de vista)
+    ipcMain.handle('gcp:listLocalFolder', async (_, localPath: string) => {
+        const code = `
+import os, json
+try:
+    path = r'${localPath}'
+    if not os.path.exists(path):
+        print(json.dumps([]))
+    else:
+        files = os.listdir(path)
+        result = []
+        for f in files:
+            full = os.path.join(path, f)
+            if os.path.isfile(full):
+                stat = os.stat(full)
+                result.append({
+                    'name': f,
+                    'size': stat.st_size,
+                    'updated': None,
+                    'isLocal': True
+                })
+        print(json.dumps(result))
+except Exception as e:
+    print(json.dumps([]))
+`
+        return runPythonCode(code)
+    })
+
+    // Iniciar sincronización (Optimizado para rutas relativas)
     ipcMain.handle('gcp:startSync', async (event, localPath: string, bucketName: string) => {
         const log = (msg: string) => event.sender.send('gcp:log', msg)
         const onEvent = (evt: any) => event.sender.send('gcp:sync_event', evt)
@@ -370,13 +398,17 @@ try:
     from google.cloud import storage
     
     class GCPAdapter:
-        def __init__(self):
+        def __init__(self, root_path):
             self.client = storage.Client()
+            self.root_path = root_path
+            
         def upload_file(self, bucket_name, file_path, object_name=None):
+            # Normalize path: ensure it's relative to root_path for the bucket
+            rel_path = os.path.relpath(file_path, self.root_path).replace("\\\\", "/")
             log_event(file_path, "uploading")
             try:
                 bucket = self.client.bucket(bucket_name)
-                blob = bucket.blob(object_name or file_path)
+                blob = bucket.blob(rel_path)
                 blob.upload_from_filename(file_path)
                 log_event(file_path, "synced")
                 return True
@@ -387,25 +419,25 @@ try:
     print(json.dumps({'success': True, 'message': 'Supervisor started'})) 
     sys.stdout.flush()
 
-    adapter = GCPAdapter()
-    # Capturamos logs de watchdog y los rebotamos como eventos
+    root_path = r'${localPath}'
+    adapter = GCPAdapter(root_path)
+    
     def watcher_callback(msg):
         if "Detected" in msg:
-            # Detected created: file.txt
             parts = msg.split(':')
             if len(parts) > 1:
                 filename = parts[1].strip()
                 log_event(filename, "pending")
         print(f"[WATCHER] {msg}")
 
-    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}', callback=watcher_callback)
+    sync = RealTimeSync(adapter, '${bucketName}', root_path, callback=watcher_callback)
     
     success, msg = sync.start()
     if success:
         print(f"Sync Controller established: {msg}")
         sys.stdout.flush()
         while True:
-            time.sleep(1) # Monitor heartbeat
+            time.sleep(1)
     else:
         print(json.dumps({'success': False, 'error': msg}))
 

@@ -20,6 +20,12 @@ import {
 } from 'lucide-react'
 import { GlassCard, Button, Input, Toast } from '../components/ui'
 
+declare global {
+    interface Window {
+        electronAPI: any
+    }
+}
+
 // Types
 interface Credential {
     path: string
@@ -84,6 +90,7 @@ function FileExplorer({
     const [viewType, setViewType] = useState<'list' | 'grid'>('list')
     const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
+    const [lastSyncPath, setLastSyncPath] = useState<string | null>(null)
 
     useEffect(() => {
         loadObjects(bucket, currentPrefix)
@@ -91,12 +98,31 @@ function FileExplorer({
 
     const loadObjects = async (bucketName: string, prefix: string) => {
         setLoading(true)
-        setObjects([]) // Clear immediately to avoid stale data
         try {
             const result = await electronAPI?.gcp.listObjects(bucketName, prefix)
-            if (result?.success) {
-                setObjects(result.data)
+            const gcsFiles = result?.success ? result.data : []
+
+            // Si hay un path de sync activo, listar local para el merge
+            let merged = [...gcsFiles]
+            if (lastSyncPath) {
+                const localRes = await electronAPI.gcp.listLocalFolder(lastSyncPath)
+                if (localRes.success) {
+                    const localItems = localRes.data || []
+
+                    // Mezclar archivos locales que NO están en la nube aún (basado en nombre)
+                    const gcsNames = new Set(gcsFiles.map((o: any) => o.name))
+                    localItems.forEach((lf: any) => {
+                        if (!gcsNames.has(lf.name)) {
+                            merged.push({
+                                ...lf,
+                                contentType: 'local-pending'
+                            })
+                        }
+                    })
+                }
             }
+
+            setObjects(merged)
         } catch (e) {
             console.error(e)
             onToast('Error al cargar objetos', 'error')
@@ -149,7 +175,9 @@ function FileExplorer({
 
                 const syncRes = await electronAPI.gcp.startSync(dirRes.data, bucket)
                 if (syncRes.success) {
+                    setLastSyncPath(dirRes.data)
                     onToast(`Sincronización activa: ${dirRes.data}`, 'success')
+                    setTimeout(() => loadObjects(bucket, currentPrefix), 1000)
                 } else {
                     onToast(syncRes.error || 'Error al iniciar sync', 'error')
                 }
@@ -340,9 +368,15 @@ function GlassControlCenter({
                 height: isMinimized ? '44px' : '260px',
                 width: isMinimized ? '320px' : '100%',
             }}
-            className={`fixed bottom-0 ${isMinimized ? 'right-4 mb-4' : 'left-0 right-0 p-4 pt-0'} z-40`}
+            className={`fixed bottom-0 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] ${isMinimized ? 'right-6 bottom-6' : 'left-0 right-0 p-4 pt-0'} z-40`}
         >
-            <GlassCard className="h-full flex flex-col shadow-2xl border-white/10 bg-black/60 backdrop-blur-3xl overflow-hidden p-0">
+            <GlassCard
+                className={`h-full flex flex-col shadow-2xl overflow-hidden p-0 transition-all duration-500
+                    ${isMinimized
+                        ? 'rounded-[2rem] border-white/20 bg-indigo-600/20 backdrop-blur-2xl ring-1 ring-white/10 hover:ring-white/30 hover:bg-indigo-600/30'
+                        : 'border-white/10 bg-black/60 backdrop-blur-3xl'
+                    }`}
+            >
                 {/* Header */}
                 <div
                     className="flex items-center justify-between p-3 cursor-pointer bg-white/5 group"
@@ -487,13 +521,24 @@ export default function GCPPage() {
         checkSession()
 
         // Subscribe to logs
-        const cleanup = window.electronAPI?.gcp.onLog((msg) => {
+        const cleanupLog = window.electronAPI.gcp.onLog((msg: string) => {
             setLogs(prev => [...prev, msg])
-            setShowLogs(true) // Auto-show logs on activity
+            setShowLogs(true)
+        })
+
+        // Subscribe to sync events
+        const cleanupSync = window.electronAPI.gcp.onSyncEvent((event: any) => {
+            if (event.type === 'sync_event' && event.file) {
+                setSyncStatuses(prev => ({
+                    ...prev,
+                    [event.file]: event.status
+                }))
+            }
         })
 
         return () => {
-            if (cleanup) cleanup()
+            if (cleanupLog) cleanupLog()
+            if (cleanupSync) cleanupSync()
         }
     }, [])
 
@@ -639,10 +684,6 @@ export default function GCPPage() {
         setCurrentView('explorer')
     }
 
-    const getFileName = (pathStr: string) => {
-        return pathStr.split(/[\\/]/).pop() || pathStr
-    }
-
     // Render Logic
     if (currentView === 'explorer' && activeExplorerBucket) {
         return (
@@ -766,7 +807,7 @@ export default function GCPPage() {
                                 >
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="font-medium text-sm text-indigo-300">{getFileName(cred.path)}</p>
+                                            <p className="font-medium text-sm text-indigo-300">{cred.path.split(/[\\/]/).pop()}</p>
                                             <p className="text-xs text-white/40 mt-1">{cred.client_email}</p>
                                         </div>
                                         <div className={`w-4 h-4 rounded-full border ${selectedCred === cred.path ? 'border-indigo-500 bg-indigo-500' : 'border-white/30'

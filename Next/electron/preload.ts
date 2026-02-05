@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             ipcRenderer.on('gcp:sync_event', subscription)
             return () => ipcRenderer.removeListener('gcp:sync_event', subscription)
         },
+        listLocalFolder: (path: string) => ipcRenderer.invoke('gcp:listLocalFolder', path),
         loadSession: () => ipcRenderer.invoke('gcp:loadSession')
     }
 })
