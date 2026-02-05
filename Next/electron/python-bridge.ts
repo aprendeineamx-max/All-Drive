@@ -244,11 +244,15 @@ print(json.dumps({'success': success, 'message': message}))
     ipcMain.handle('gcp:startSync', async (event, localPath: string, bucketName: string) => {
         const log = (msg: string) => event.sender.send('gcp:log', msg)
 
+        // Ensure path to Legacy/ is correct
+        const legacyLibPath = path.join(LEGACY_PATH, 'Legacy').replace(/\\/g, '/')
+
         const code = `
 ${getAuthHeader()}
 import json, sys, time
+sys.path.insert(0, '${legacyLibPath}')
 sys.path.insert(0, '.')
-# Mock RealTimeSync behavior for stability if file not found, or use real one
+
 try:
     from file_watcher import RealTimeSync
     from google.cloud import storage
@@ -260,22 +264,36 @@ try:
             bucket = self.client.bucket(bucket_name)
             blob = bucket.blob(object_name or file_path)
             blob.upload_from_filename(file_path)
-            print(f"Uploaded: {file_path}") # This goes to stdout -> log
+            # Log printed to stdout is captured by Node
+            print(f"Uploaded: {file_path}") 
             return True
 
-    print("Initializing Sync...")
+    print(json.dumps({'success': True, 'message': 'Initializing...'})) # Trigger early resolve
+    sys.stdout.flush()
+
     adapter = GCPAdapter()
-    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}')
-    # Note: If start() is blocking, this will keep running. 
-    # We should probably run this in a detached way for real background sync, 
-    # but for now we stream logs.
+    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}', callback=print)
+    
     success, msg = sync.start()
-    print(json.dumps({'success': success, 'message': msg}))
+    if success:
+        print(f"Sync Started: {msg}")
+        sys.stdout.flush()
+        
+        # Keep alive loop
+        while True:
+            time.sleep(1)
+    else:
+        print(f"Sync Failed to start: {msg}")
+
 except Exception as e:
-    print(json.dumps({'success': False, 'message': str(e)}))
+    print(f"Error: {str(e)}")
 `
-        // Use runPythonCode with log callback
-        return runPythonCode(code, log)
+        return startBackgroundPython(code, log)
+    })
+
+    ipcMain.handle('gcp:stopSync', () => {
+        const killed = stopBackgroundPython()
+        return { success: killed }
     })
 
     // Diálogo para seleccionar carpeta

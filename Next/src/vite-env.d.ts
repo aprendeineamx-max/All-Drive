@@ -21,10 +21,11 @@ declare global {
                 authenticate: (credPath: string) => Promise<{ success: boolean; data: any; error?: string }>
                 listBuckets: () => Promise<{ success: boolean; data: any; error?: string }>
                 listObjects: (bucket: string, prefix: string) => Promise<{ success: boolean; data: any; error?: string }>
-                mountBucket: (bucket: string, drive: string) => Promise<{ success: boolean; data: any; error?: string }>
-                unmountDrive: (drive: string) => Promise<{ success: boolean; data: any; error?: string }>
-                startSync: (localPath: string, bucketName: string) => Promise<{ success: boolean; data: any; error?: string }>
-                openDirectory: () => Promise<{ success: boolean; data?: string }>
+                mountBucket: (bucket: string, drive: string) => Promise<{ success: boolean; error?: string }>
+                unmountDrive: (drive: string) => Promise<{ success: boolean; error?: string }>
+                startSync: (localPath: string, bucketName: string) => Promise<{ success: boolean; message?: string; error?: string }>
+                stopSync: () => Promise<{ success: boolean }>
+                openDirectory: () => Promise<{ success: boolean; data?: string; error?: string }>
                 uploadCredentials: () => Promise<{ success: boolean; data?: string; error?: string }>
                 uploadFile: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
                 uploadFolder: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; count?: number; error?: string }>
