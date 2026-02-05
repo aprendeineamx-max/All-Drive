@@ -429,9 +429,11 @@ try:
         def upload_file(self, bucket_name, file_path, object_name=None):
             # Normalize path: ensure it's relative to root_path and uses Forward Slashes for GCS
             try:
+                # Get the name of the synced folder (e.g., "Desktop")
+                folder_name = os.path.basename(self.root_path)
                 rel_path = os.path.relpath(file_path, self.root_path)
-                # FORCE FORWARD SLASHES for GCS object names
-                blob_name = rel_path.replace(os.sep, '/')
+                # PREPEND folder name and FORCE FORWARD SLASHES for GCS object names
+                blob_name = f"{folder_name}/{rel_path}".replace(os.sep, '/')
 
                 log_event(file_path, "uploading")
 
