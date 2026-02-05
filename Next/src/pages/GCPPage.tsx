@@ -356,6 +356,21 @@ function FileExplorer({
     // Delete Selected Files
     const handleDeleteSelected = async () => {
         if (selectedFiles.size === 0) return
+
+        // Check if deleting the sync root
+        const rootName = lastSyncPath?.split(/[/\\]/).pop() || ''
+        const isDeletingSyncRoot = selectedFiles.has(rootName) && currentLocalPath === ''
+
+        if (isDeletingSyncRoot) {
+            const confirmed = window.confirm(
+                `La carpeta "${rootName}" está sincronizándose actualmente.\n\n¿Deseas DETENER la sincronización y eliminar esta carpeta de la nube?`
+            )
+            if (!confirmed) return
+
+            // Stop sync first
+            await handleStopSync()
+        }
+
         setActionLoading(true)
         onToast(`Eliminando ${selectedFiles.size} archivos...`, 'info')
         for (const name of selectedFiles) {
@@ -365,6 +380,15 @@ function FileExplorer({
         loadObjects(bucket, currentPrefix)
         onToast('Eliminación completada', 'success')
         setActionLoading(false)
+    }
+
+    // Stop Sync (Disconnect local folder)
+    const handleStopSync = async () => {
+        setLastSyncPath(null)
+        setCurrentLocalPath('')
+        await electronAPI.gcp.saveSession({ lastSyncPath: null })
+        onToast('Sincronización detenida', 'info')
+        loadObjects(bucket, currentPrefix)
     }
 
     // Preview File Content
@@ -506,6 +530,12 @@ function FileExplorer({
                         <RefreshCw size={16} className="mr-2" />
                         Sincronizar Carpeta Local
                     </Button>
+                    {lastSyncPath && (
+                        <Button size="sm" variant="ghost" onClick={handleStopSync} disabled={actionLoading} className="text-red-400 hover:text-red-300 hover:bg-red-500/20">
+                            <AlertCircle size={16} className="mr-2" />
+                            Detener Sincronización
+                        </Button>
+                    )}
 
                     <div className="ml-auto flex items-center gap-3 pr-2">
                         <label className="flex items-center gap-2 cursor-pointer group">
