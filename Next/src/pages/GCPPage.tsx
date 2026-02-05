@@ -41,12 +41,22 @@ interface GCSObject {
 }
 
 // Sub-component: File Explorer (Full View)
-function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClose: () => void, electronAPI: any }) {
+function FileExplorer({
+    bucket,
+    onClose,
+    electronAPI,
+    onToast
+}: {
+    bucket: string,
+    onClose: () => void,
+    electronAPI: any,
+    onToast: (msg: string, type: 'success' | 'error' | 'info') => void
+}) {
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [viewType, setViewType] = useState<'list' | 'grid'>('list')
-    const [currentPrefix, setCurrentPrefix] = useState('')
+    const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
 
     useEffect(() => {
@@ -63,6 +73,7 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
             }
         } catch (e) {
             console.error(e)
+            onToast('Error al cargar objetos', 'error')
         } finally {
             setLoading(false)
         }
@@ -72,9 +83,14 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
         setActionLoading(true)
         try {
             const res = await electronAPI.gcp.uploadFile(bucket, currentPrefix)
-            if (res.success) await loadObjects(bucket, currentPrefix)
-        } catch (e) {
-            console.error(e)
+            if (res.success) {
+                onToast('Archivo subido correctamente', 'success')
+                await loadObjects(bucket, currentPrefix)
+            } else if (!res.cancelled) {
+                onToast(res.error || 'Error al subir archivo', 'error')
+            }
+        } catch (e: any) {
+            onToast(e.message, 'error')
         } finally {
             setActionLoading(false)
         }
@@ -84,9 +100,14 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
         setActionLoading(true)
         try {
             const res = await electronAPI.gcp.uploadFolder(bucket, currentPrefix)
-            if (res.success) await loadObjects(bucket, currentPrefix)
-        } catch (e) {
-            console.error(e)
+            if (res.success) {
+                onToast(`Carpeta subida (${res.count} archivos)`, 'success')
+                await loadObjects(bucket, currentPrefix)
+            } else if (!res.cancelled) {
+                onToast(res.error || 'Error al subir carpeta', 'error')
+            }
+        } catch (e: any) {
+            onToast(e.message, 'error')
         } finally {
             setActionLoading(false)
         }
@@ -97,13 +118,18 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
             const dirRes = await electronAPI.gcp.openDirectory()
             if (dirRes.success && dirRes.data) {
                 setActionLoading(true)
+                // Optimistic UI: notify start immediately
+                onToast('Iniciando sincronización en segundo plano...', 'info')
+
                 const syncRes = await electronAPI.gcp.startSync(dirRes.data, bucket)
                 if (syncRes.success) {
-                    alert(`Sincronización iniciada con: ${dirRes.data}`)
+                    onToast(`Sincronización activa: ${dirRes.data}`, 'success')
+                } else {
+                    onToast(syncRes.error || 'Error al iniciar sync', 'error')
                 }
             }
-        } catch (e) {
-            console.error(e)
+        } catch (e: any) {
+            onToast(e.message, 'error')
         } finally {
             setActionLoading(false)
         }
@@ -264,6 +290,18 @@ export default function GCPPage() {
     const [selectedPreviewBucket, setSelectedPreviewBucket] = useState<string | null>(null)
     const [previewObjects, setPreviewObjects] = useState<any[]>([])
 
+    // Notifications
+    const [toasts, setToasts] = useState<{ id: string, message: string, type: 'success' | 'error' | 'info' }[]>([])
+
+    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        const id = Math.random().toString(36).substr(2, 9)
+        setToasts(prev => [...prev, { id, message, type }])
+    }
+
+    const removeToast = (id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id))
+    }
+
     useEffect(() => {
         loadCredentials()
         checkSession()
@@ -306,9 +344,11 @@ export default function GCPPage() {
                 loadCredentials() // Reload list
                 setCredentials(prev => [...prev, { path: result.data!, project_id: 'New', client_email: 'New' }])
                 setSelectedCred(result.data!)
+                showToast('Credencial importada correctamente', 'success')
             }
         } catch (e: any) {
             setError(e.message)
+            showToast('Error al importar credencial', 'error')
         }
     }
 
@@ -338,11 +378,18 @@ export default function GCPPage() {
                     if (listResult?.success) setBuckets(listResult.data)
                 }
 
+                if (!credPathOverride) {
+                    showToast('Conectado a Google Cloud Platform', 'success')
+                }
+
             } else {
-                setError(result?.error || 'Error de autenticación')
+                const errMsg = result?.error || 'Error de autenticación'
+                setError(errMsg)
+                showToast(errMsg, 'error')
             }
         } catch (e: any) {
             setError(e.message)
+            showToast(e.message, 'error')
         } finally {
             setAuthLoading(false)
         }
@@ -382,26 +429,44 @@ export default function GCPPage() {
     // Render Logic
     if (currentView === 'explorer' && activeExplorerBucket) {
         return (
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key="explorer"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="h-[calc(100vh-100px)]"
-                >
-                    <FileExplorer
-                        bucket={activeExplorerBucket}
-                        onClose={() => setCurrentView('dashboard')}
-                        electronAPI={window.electronAPI}
-                    />
-                </motion.div>
-            </AnimatePresence>
+            <>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key="explorer"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="h-[calc(100vh-100px)]"
+                    >
+                        <FileExplorer
+                            bucket={activeExplorerBucket}
+                            onClose={() => setCurrentView('dashboard')}
+                            electronAPI={window.electronAPI}
+                            onToast={showToast}
+                        />
+                    </motion.div>
+                </AnimatePresence>
+
+                {/* Toast Container */}
+                <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+                    <AnimatePresence>
+                        {toasts.map(toast => (
+                            <div key={toast.id} className="pointer-events-auto">
+                                <Toast
+                                    message={toast.message}
+                                    type={toast.type}
+                                    onClose={() => removeToast(toast.id)}
+                                />
+                            </div>
+                        ))}
+                    </AnimatePresence>
+                </div>
+            </>
         )
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 relative min-h-screen">
             <header>
                 <h2 className="text-2xl font-bold mb-2 text-white flex items-center gap-2">
                     <Cloud className="text-indigo-400" />

@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion'
 import { ReactNode } from 'react'
+import { CheckCircle2, AlertCircle, Cloud, X } from 'lucide-react'
+import React from 'react'
 
 interface GlassCardProps {
     children: ReactNode
@@ -148,5 +150,40 @@ export function Select({ value, onChange, options, placeholder, disabled, classN
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
         </select>
+    )
+}
+
+interface ToastProps {
+    message: string
+    type?: 'success' | 'error' | 'info'
+    onClose: () => void
+}
+
+export function Toast({ message, type = 'info', onClose }: ToastProps) {
+    const icons = {
+        success: <CheckCircle2 size={18} className="text-green-400" />,
+        error: <AlertCircle size={18} className="text-red-400" />,
+        info: <Cloud size={18} className="text-indigo-400" />
+    }
+
+    // Auto-dismiss
+    React.useEffect(() => {
+        const timer = setTimeout(onClose, 3000)
+        return () => clearTimeout(timer)
+    }, [onClose])
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="flex items-center gap-3 px-4 py-3 bg-[#1a1b26]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl min-w-[300px]"
+        >
+            {icons[type]}
+            <p className="text-sm text-white/90 font-medium">{message}</p>
+            <button onClick={onClose} className="ml-auto text-white/30 hover:text-white transition-colors">
+                <X size={14} />
+            </button>
+        </motion.div>
     )
 }
