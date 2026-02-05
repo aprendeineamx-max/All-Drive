@@ -1,0 +1,12 @@
+Script START
+Process Type: browser
+Versions: {"node":"18.18.2","acorn":"8.10.0","ada":"2.6.0","ares":"1.19.1","brotli":"1.0.9","cldr":"43.0","icu":"73.1","llhttp":"6.0.11","modules":"119","napi":"9","nghttp2":"1.57.0","openssl":"1.1.1","simdutf":"3.2.14","tz":"2023c","undici":"5.26.3","unicode":"15.0","uv":"1.44.2","uvwasi":"0.0.18","v8":"12.0.267.17-electron.0","zlib":"1.2.13.1-motley","electron":"28.2.0","chrome":"120.0.6099.227"}
+App READY
+IPCMain exists: true
+IPCMain types: function
+Script START
+Process Type: browser
+Versions: {"node":"18.18.2","acorn":"8.10.0","ada":"2.6.0","ares":"1.19.1","brotli":"1.0.9","cldr":"43.0","icu":"73.1","llhttp":"6.0.11","modules":"119","napi":"9","nghttp2":"1.57.0","openssl":"1.1.1","simdutf":"3.2.14","tz":"2023c","undici":"5.26.3","unicode":"15.0","uv":"1.44.2","uvwasi":"0.0.18","v8":"12.0.267.17-electron.0","zlib":"1.2.13.1-motley","electron":"28.2.0","chrome":"120.0.6099.227"}
+App READY
+IPCMain exists: true
+IPCMain types: function

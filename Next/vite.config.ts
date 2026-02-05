@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
-import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
+import { spawn } from 'child_process'
 
 export default defineConfig({
     plugins: [
@@ -10,11 +10,15 @@ export default defineConfig({
         electron([
             {
                 entry: 'electron/main.ts',
+                onstart(args) {
+                    const electronBin = path.resolve(__dirname, 'node_modules/electron-bin/dist/electron.exe')
+                    console.log(`Starting Electron from: ${electronBin}`)
+                    spawn(`"${electronBin}"`, ['.'], { stdio: 'inherit', shell: true })
+                },
                 vite: {
-                    build: {
-                        outDir: 'dist-electron',
-                        rollupOptions: {
-                            external: ['electron']
+                    resolve: {
+                        alias: {
+                            'electron': path.resolve(__dirname, 'node_modules/electron-bin/index.js')
                         }
                     }
                 }
@@ -25,16 +29,14 @@ export default defineConfig({
                     args.reload()
                 },
                 vite: {
-                    build: {
-                        outDir: 'dist-electron',
-                        rollupOptions: {
-                            external: ['electron']
+                    resolve: {
+                        alias: {
+                            'electron': path.resolve(__dirname, 'node_modules/electron-bin/index.js')
                         }
                     }
                 }
             }
         ]),
-        renderer()
     ],
     resolve: {
         alias: {

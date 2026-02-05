@@ -1,0 +1,1 @@
+const electron = require('electron'); console.log('DEBUG_START'); console.log('Type:', typeof electron); console.log('Value:', electron); console.log('IPCMain:', !!electron.ipcMain); console.log('DEBUG_END'); process.exit(0);

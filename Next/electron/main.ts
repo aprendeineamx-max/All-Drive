@@ -3,7 +3,7 @@ import path from 'path'
 import { registerGCPHandlers } from './python-bridge'
 
 
-let mainWindow: BrowserWindow | null = null
+let mainWindow: any = null
 
 const createWindow = () => {
     mainWindow = new BrowserWindow({

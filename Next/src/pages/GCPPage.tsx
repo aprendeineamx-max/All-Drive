@@ -44,6 +44,8 @@ interface GCSObject {
     contentType: string
     fileCount?: number
     folderCount?: number
+    syncState?: SyncStatus | string
+    isLocal?: boolean
 }
 
 type SyncStatus = 'pending' | 'uploading' | 'synced'
@@ -93,17 +95,95 @@ function FileExplorer({
     lastSyncPath: string | null,
     setLastSyncPath: (path: string | null) => void
 }) {
+    const [currentLocalPath, setCurrentLocalPath] = useState<string>('')  // Relative path within sync folder
+    const [currentPrefix, _setCurrentPrefix] = useState('') // Internal navigation state
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [viewType, setViewType] = useState<'list' | 'grid' | 'details'>('list')
     const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' })
-    const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
     const [previewFile, setPreviewFile] = useState<{ name: string, content: string } | null>(null)
-    const [currentLocalPath, setCurrentLocalPath] = useState<string>('')  // Relative path within sync folder
     const [autoLaunch, setAutoLaunch] = useState(false)
+
+    // IMMEDIATE VISIBILITY: Listen for sync events to add files in real-time
+    useEffect(() => {
+        const cleanup = window.electronAPI.gcp.onSyncEvent((event: any) => {
+            if (event.type === 'sync_event' && event.file) {
+                // 1. Calculate the current visible prefix in GCS terms
+                let visiblePrefix = ''
+                let rootName = ''
+
+                if (lastSyncPath) {
+                    rootName = lastSyncPath.split(/[/\\]/).pop() || 'Desktop'
+                    if (currentLocalPath === '') {
+                        visiblePrefix = rootName
+                    } else {
+                        // currentLocalPath is relative inside the sync root
+                        // visiblePrefix includes the rootName
+                        visiblePrefix = `${rootName}/${currentLocalPath}`.replace(/\\/g, '/')
+                    }
+                } else {
+                    visiblePrefix = currentPrefix
+                }
+
+                // 2. Parse the syncing file path
+                // event.file is relative to the sync root (e.g. "Desktop/file.txt")
+                // Ensure forward slashes
+                const syncFile = event.file.replace(/\\/g, '/')
+
+                // 3. Check if this file belongs to the current view
+                // Logic: syncFile must start with visiblePrefix
+
+                // Handle root mismatch (if syncFile doesn't start with what we are looking at)
+                if (lastSyncPath && !syncFile.startsWith(visiblePrefix)) return
+
+                // Special case: visiblePrefix might be same as syncFile
+                if (syncFile === visiblePrefix) return
+
+                let relativePart = ''
+                if (lastSyncPath) {
+                    // We need to strip "visiblePrefix/"
+                    // Example: visiblePrefix="Desktop", syncFile="Desktop/file.txt" -> relative="file.txt"
+                    if (syncFile.startsWith(visiblePrefix + '/')) {
+                        relativePart = syncFile.substring(visiblePrefix.length + 1)
+                    } else if (visiblePrefix === rootName && syncFile.startsWith(rootName + '/')) {
+                        // Catch-all for root level matches
+                        relativePart = syncFile.substring(rootName.length + 1)
+                    } else {
+                        return // Not in this path
+                    }
+                } else {
+                    // Non-sync view logic (if event.file is full path)
+                    return
+                }
+
+                // 4. Determine if it's a file or folder at this level
+                const parts = relativePart.split('/')
+                const itemName = parts[0]
+                const isDirectory = parts.length > 1
+
+                // 5. Optimistic Update
+                setObjects(prev => {
+                    // Prevent duplicates
+                    if (prev.find(p => p.name === itemName)) return prev
+
+                    const newObj: GCSObject = {
+                        name: itemName,
+                        size: 0,
+                        updated: new Date().toISOString(),
+                        contentType: isDirectory ? 'directory' : 'application/octet-stream',
+                        syncState: 'synced'
+                    }
+                    return [...prev, newObj]
+                })
+
+            }
+        })
+        return cleanup
+    }, [lastSyncPath, currentLocalPath, currentPrefix])
+
 
     // Load session and check auto-launch on mount
     useEffect(() => {
@@ -359,6 +439,8 @@ function FileExplorer({
     const handleDeleteSelected = async () => {
         if (selectedFiles.size === 0) return
 
+        const filesToDelete = Array.from(selectedFiles)
+
         // Check if deleting the sync root
         const rootName = lastSyncPath?.split(/[/\\]/).pop() || ''
         const isDeletingSyncRoot = selectedFiles.has(rootName) && currentLocalPath === ''
@@ -375,13 +457,25 @@ function FileExplorer({
 
         setActionLoading(true)
         onToast(`Eliminando ${selectedFiles.size} archivos...`, 'info')
-        for (const name of selectedFiles) {
-            await electronAPI.gcp.deleteObject(bucket, name)
-        }
+
+        // OPTIMISTIC UI: Remove from list immediately
+        setObjects(prev => prev.filter(obj => !selectedFiles.has(obj.name)))
         setSelectedFiles(new Set())
-        loadObjects(bucket, currentPrefix)
-        onToast('Eliminación completada', 'success')
-        setActionLoading(false)
+        try {
+            for (const name of filesToDelete) {
+                const res = await electronAPI.gcp.deleteObject(bucket, name)
+                if (!res.success) {
+                    onToast(`Error al eliminar ${name}: ${res.error}`, 'error')
+                }
+            }
+            onToast('Eliminación completada', 'success')
+        } catch (e: any) {
+            onToast(`Error en proceso de eliminación: ${e.message}`, 'error')
+        } finally {
+            setActionLoading(false)
+            // Final refresh to ensure consistency
+            loadObjects(bucket, currentPrefix)
+        }
     }
 
     // Stop Sync (Disconnect local folder)
@@ -412,7 +506,18 @@ function FileExplorer({
                 : obj.name
             setCurrentLocalPath(newPath)
         } else {
-            handlePreview(obj.name)
+            // Reconstruct full GCS path for preview
+            let fullGcsPath = obj.name
+            if (lastSyncPath) {
+                if (currentLocalPath === '') {
+                    // In Virtual Root, obj.name might be the root folder itself if it's what we clicked
+                    // but for files inside gcs root it's just name
+                    fullGcsPath = obj.name
+                } else {
+                    fullGcsPath = `${currentLocalPath}/${obj.name}`.replace(/\/+/g, '/')
+                }
+            }
+            handlePreview(fullGcsPath)
         }
     }
 
@@ -441,12 +546,6 @@ function FileExplorer({
             hour: '2-digit',
             minute: '2-digit'
         })
-    }
-
-    const getFileType = (obj: GCSObject) => {
-        if (obj.contentType === 'directory') return 'Carpeta de archivos'
-        const ext = obj.name.split('.').pop()?.toUpperCase()
-        return ext ? `Archivo ${ext}` : 'Archivo'
     }
 
     const sortedObjects = [...objects].sort((a, b) => {
@@ -701,12 +800,26 @@ function FileExplorer({
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
                                         {filteredObjects.map((obj, i) => (
-                                            <tr key={i} className="hover:bg-white/5 group transition-colors">
+                                            <tr
+                                                key={i}
+                                                className="hover:bg-white/5 group transition-colors cursor-pointer"
+                                                onClick={(e) => {
+                                                    // Don't trigger if clicking checkbox
+                                                    if ((e.target as HTMLElement).tagName === 'INPUT') return
+                                                    handleFileClick(obj)
+                                                }}
+                                                onDoubleClick={() => {
+                                                    handleFileClick(obj)
+                                                }}
+                                            >
                                                 <td className="px-2 py-2">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedFiles.has(obj.name)}
-                                                        onChange={() => toggleSelection(obj.name)}
+                                                        onChange={(e) => {
+                                                            e.stopPropagation()
+                                                            toggleSelection(obj.name)
+                                                        }}
                                                         className="w-4 h-4 rounded border-white/20 bg-transparent accent-indigo-500"
                                                     />
                                                 </td>
@@ -722,9 +835,8 @@ function FileExplorer({
                                                         </div>
                                                     </div>
                                                     <span
-                                                        className="truncate max-w-[250px] cursor-pointer hover:text-indigo-300 hover:underline font-medium"
+                                                        className="truncate max-w-[250px] font-medium"
                                                         title={obj.name}
-                                                        onClick={() => handleFileClick(obj)}
                                                     >
                                                         {obj.name.split(/[/\\]/).pop()}
                                                     </span>
