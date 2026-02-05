@@ -17,7 +17,9 @@ import {
     Search,
     Grid,
     List as ListIcon,
-    Trash2
+    Trash2,
+    ChevronUp,
+    ChevronDown
 } from 'lucide-react'
 import { GlassCard, Button, Input, Toast } from '../components/ui'
 
@@ -534,21 +536,46 @@ function FileExplorer({
                             <p>Carpeta vacía o sin resultados</p>
                         </div>
                     ) : (
-                        viewType === 'list' ? (
-                            <>
-                                {/* Action Bar */}
-                                {selectedFiles.size > 0 && (
-                                    <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg mb-2">
-                                        <span className="text-xs text-red-300">{selectedFiles.size} seleccionados</span>
-                                        <Button size="sm" variant="secondary" onClick={handleDeleteSelected} disabled={actionLoading} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border-red-500/30">
-                                            <Trash2 size={14} className="mr-1" /> Eliminar
-                                        </Button>
-                                    </div>
-                                )}
-                                <table className="w-full text-sm text-left">
-                                    <thead className="text-xs text-white/40 uppercase border-b border-white/10">
+                        <>
+                            {/* Action Bar */}
+                            {selectedFiles.size > 0 && (
+                                <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg mb-2">
+                                    <span className="text-xs text-red-300">{selectedFiles.size} seleccionados</span>
+                                    <Button size="sm" variant="secondary" onClick={handleDeleteSelected} disabled={actionLoading} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border-red-500/30">
+                                        <Trash2 size={14} className="mr-1" /> Eliminar
+                                    </Button>
+                                </div>
+                            )}
+
+                            {viewType === 'grid' ? (
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                    {filteredObjects.map((obj, i) => (
+                                        <motion.div
+                                            key={i}
+                                            whileHover={{ scale: 1.02 }}
+                                            onClick={() => handleFileClick(obj)}
+                                            className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
+                                        >
+                                            <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
+                                                {obj.contentType === 'directory' ? <Folder size={24} className="text-yellow-500" /> : <FileText size={24} />}
+                                                <div className="absolute top-0 right-0 p-1">
+                                                    <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
+                                                </div>
+                                            </div>
+                                            <div className="min-w-0 w-full">
+                                                <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1" title={obj.name}>
+                                                    {obj.name.split(/[/\\]/).pop()}
+                                                </p>
+                                                <p className="text-[10px] text-white/40">{formatSize(obj.size)}</p>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <table className="w-full text-sm text-left border-separate border-spacing-0">
+                                    <thead className="text-[10px] text-white/30 uppercase tracking-wider sticky top-0 bg-black/40 backdrop-blur-md z-10">
                                         <tr>
-                                            <th className="px-2 py-3">
+                                            <th className="px-2 py-3 border-b border-white/5 w-10">
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedFiles.size === filteredObjects.length && filteredObjects.length > 0}
@@ -556,15 +583,38 @@ function FileExplorer({
                                                     className="w-4 h-4 rounded border-white/20 bg-transparent accent-indigo-500"
                                                 />
                                             </th>
-                                            <th className="px-4 py-3 font-medium">Nombre</th>
-                                            <th className="px-4 py-3 font-medium">Tamaño</th>
-                                            <th className="px-4 py-3 font-medium">Tipo</th>
+                                            <th className="px-4 py-3 border-b border-white/5 font-bold cursor-pointer hover:text-white transition-colors group" onClick={() => handleSort('name')}>
+                                                <div className="flex items-center gap-2">
+                                                    Nombre
+                                                    {sortConfig?.key === 'name' && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                                                </div>
+                                            </th>
+                                            {viewType === 'details' && (
+                                                <th className="px-4 py-3 border-b border-white/5 font-bold cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('updated')}>
+                                                    <div className="flex items-center gap-2">
+                                                        Fecha de modificación
+                                                        {sortConfig?.key === 'updated' && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                                                    </div>
+                                                </th>
+                                            )}
+                                            <th className="px-4 py-3 border-b border-white/5 font-bold cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('contentType')}>
+                                                <div className="flex items-center gap-2">
+                                                    Tipo
+                                                    {sortConfig?.key === 'contentType' && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                                                </div>
+                                            </th>
+                                            <th className="px-4 py-3 border-b border-white/5 font-bold cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('size')}>
+                                                <div className="flex items-center gap-2">
+                                                    Tamaño
+                                                    {sortConfig?.key === 'size' && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                                                </div>
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
                                         {filteredObjects.map((obj, i) => (
                                             <tr key={i} className="hover:bg-white/5 group transition-colors">
-                                                <td className="px-2 py-3">
+                                                <td className="px-2 py-2">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedFiles.has(obj.name)}
@@ -572,8 +622,8 @@ function FileExplorer({
                                                         className="w-4 h-4 rounded border-white/20 bg-transparent accent-indigo-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
-                                                    <div className="relative">
+                                                <td className="px-4 py-2 flex items-center gap-3 text-white/80 group-hover:text-white">
+                                                    <div className="relative flex-shrink-0">
                                                         {obj.contentType === 'directory' ? (
                                                             <Folder size={16} className="text-yellow-500" />
                                                         ) : (
@@ -584,49 +634,30 @@ function FileExplorer({
                                                         </div>
                                                     </div>
                                                     <span
-                                                        className="truncate max-w-[300px] cursor-pointer hover:text-indigo-300 hover:underline"
+                                                        className="truncate max-w-[250px] cursor-pointer hover:text-indigo-300 hover:underline font-medium"
                                                         title={obj.name}
                                                         onClick={() => handleFileClick(obj)}
                                                     >
                                                         {obj.name.split(/[/\\]/).pop()}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-white/50 font-mono text-xs">
-                                                    {(obj.size / 1024).toFixed(1)} KB
+                                                {viewType === 'details' && (
+                                                    <td className="px-4 py-2 text-white/50 text-xs whitespace-nowrap">
+                                                        {formatDate(obj.updated)}
+                                                    </td>
+                                                )}
+                                                <td className="px-4 py-2 text-white/40 text-xs truncate max-w-[150px]">
+                                                    {getFileType(obj)}
                                                 </td>
-                                                <td className="px-4 py-3 text-white/40 text-xs truncate max-w-[150px]">
-                                                    {obj.contentType || 'application/octet-stream'}
+                                                <td className="px-4 py-2 text-white/50 font-mono text-xs whitespace-nowrap">
+                                                    {formatSize(obj.size)}
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                            </>
-                        ) : (
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                {filteredObjects.map((obj, i) => (
-                                    <motion.div
-                                        key={i}
-                                        whileHover={{ scale: 1.02 }}
-                                        onClick={() => handleFileClick(obj)}
-                                        className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
-                                    >
-                                        <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
-                                            {obj.contentType === 'directory' ? <Folder size={24} className="text-yellow-500" /> : <FileText size={24} />}
-                                            <div className="absolute top-0 right-0 p-1">
-                                                <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
-                                            </div>
-                                        </div>
-                                        <div className="min-w-0 w-full">
-                                            <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1" title={obj.name}>
-                                                {obj.name.split(/[/\\]/).pop()}
-                                            </p>
-                                            <p className="text-[10px] text-white/40">{(obj.size / 1024).toFixed(1)} KB</p>
-                                        </div>
-                                    </motion.div>
-                                ))}
-                            </div>
-                        )
+                            )}
+                        </>
                     )}
                 </div>
             </GlassCard>
