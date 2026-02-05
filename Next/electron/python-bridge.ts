@@ -612,7 +612,7 @@ upload_folder()
 
     // --- NEW: Cleanup Suite Handlers ---
 
-    // Eliminar archivo/objeto
+    // Eliminar archivo/objeto (Recursivo para carpetas)
     ipcMain.handle('gcp:deleteObject', async (event, bucketName: string, objectName: string) => {
         // Use raw string in Python to handle backslashes correctly
         const escapedName = objectName.replace(/\\/g, '\\\\')
@@ -620,17 +620,45 @@ upload_folder()
 ${getAuthHeader()}
 from google.cloud import storage
 import json
-try:
-    obj_name = "${escapedName}"
-    print(f"Eliminando {obj_name}...")
-    client = storage.Client()
-    bucket = client.bucket('${bucketName}')
-    blob = bucket.blob(obj_name)
-    blob.delete()
-    print("Eliminado correctamente")
-    print(json.dumps({'success': True}))
-except Exception as e:
-    print(json.dumps({'success': False, 'error': str(e)}))
+
+def delete_recursive():
+    try:
+        bucket_name = '${bucketName}'
+        obj_name = "${escapedName}"
+        print(f"Iniciando eliminación de: {obj_name} en bucket {bucket_name}")
+        
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+
+        # 1. Intentar borrar el objeto exacto (si es un archivo)
+        try:
+            blob = bucket.blob(obj_name)
+            blob.delete()
+            print(f"Objeto principal {obj_name} eliminado.")
+        except Exception:
+            # Puede que no exista como blob simple si es una carpeta virtual, continuamos
+            pass
+
+        # 2. Búsqueda recursiva para carpetas (prefijos)
+        # Añadimos / al final si no lo tiene para asegurar que tratamos como directorio
+        prefix = obj_name if obj_name.endswith('/') else obj_name + '/'
+        
+        print(f"Buscando objetos con prefijo: {prefix}")
+        blobs_to_delete = list(bucket.list_blobs(prefix=prefix))
+        
+        if len(blobs_to_delete) > 0:
+            print(f"Encontrados {len(blobs_to_delete)} elementos hijos. Eliminando...")
+            # Eliminación en lote (batch) es más robusta
+            bucket.delete_blobs(blobs_to_delete)
+            print("Limpieza recursiva completada.")
+        
+        print(json.dumps({'success': True}))
+
+    except Exception as e:
+        print(f"Error en eliminación: {str(e)}")
+        print(json.dumps({'success': False, 'error': str(e)}))
+
+delete_recursive()
 `
         return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
     })
