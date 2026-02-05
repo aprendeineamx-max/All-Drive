@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         getFileContent: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:getFileContent', bucket, objectName),
         getSession: () => ipcRenderer.invoke('gcp:getSession'),
         setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('gcp:setAutoLaunch', enabled),
-        getAutoLaunch: () => ipcRenderer.invoke('gcp:getAutoLaunch')
+        getAutoLaunch: () => ipcRenderer.invoke('gcp:getAutoLaunch'),
+        cleanBucket: (bucket: string) => ipcRenderer.invoke('gcp:cleanBucket', bucket)
     }
 })

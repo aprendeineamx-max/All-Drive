@@ -319,11 +319,15 @@ try:
             'contentType': blob.content_type
         })
     
-    # Agregar Carpetas (prefixes)
+    # Agregar Carpetas (prefixes) con tamaño calculado
     for p in iterator.prefixes:
+        # Calcular tamaño total de la carpeta
+        folder_blobs = list(bucket.list_blobs(prefix=p))
+        folder_size = sum(b.size for b in folder_blobs)
+        
         objects.append({
             'name': p,
-            'size': 0,
+            'size': folder_size,
             'updated': None,
             'contentType': 'directory'
         })
@@ -709,6 +713,41 @@ except Exception as e:
     print(json.dumps({'success': False, 'error': str(e)}))
 `
         return runPythonCode(code)
+    })
+
+    // Clean Bucket (Delete ALL objects)
+    ipcMain.handle('gcp:cleanBucket', async (event, bucketName: string) => {
+        const code = `
+${getAuthHeader()}
+from google.cloud import storage
+import json
+
+def clean_bucket():
+    try:
+        print(f"Limpiando bucket: ${bucketName}...")
+        client = storage.Client()
+        bucket = client.bucket('${bucketName}')
+        
+        blobs = list(bucket.list_blobs())
+        total = len(blobs)
+        
+        if total == 0:
+            print("El bucket ya está vacío.")
+            print(json.dumps({'success': True, 'deleted': 0}))
+            return
+        
+        print(f"Eliminando {total} objetos...")
+        bucket.delete_blobs(blobs)
+        print(f"Bucket limpio. {total} objetos eliminados.")
+        print(json.dumps({'success': True, 'deleted': total}))
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        print(json.dumps({'success': False, 'error': str(e)}))
+
+clean_bucket()
+`
+        return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
     })
 
 

@@ -536,6 +536,19 @@ function FileExplorer({
                             Detener Sincronización
                         </Button>
                     )}
+                    <Button size="sm" variant="ghost" onClick={async () => {
+                        if (window.confirm('⚠️ ¿Estás seguro de eliminar TODO el contenido de este bucket?\n\nEsta acción NO se puede deshacer.')) {
+                            setActionLoading(true)
+                            onToast('Limpiando bucket...', 'info')
+                            await electronAPI.gcp.cleanBucket(bucket)
+                            loadObjects(bucket, currentPrefix)
+                            onToast('Bucket limpio', 'success')
+                            setActionLoading(false)
+                        }
+                    }} disabled={actionLoading} className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/20">
+                        <Trash2 size={16} className="mr-2" />
+                        Limpiar Bucket
+                    </Button>
 
                     <div className="ml-auto flex items-center gap-3 pr-2">
                         <label className="flex items-center gap-2 cursor-pointer group">
