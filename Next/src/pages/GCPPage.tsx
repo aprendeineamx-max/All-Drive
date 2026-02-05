@@ -11,9 +11,14 @@ import {
     ChevronRight,
     UploadCloud,
     FileText,
-    CheckCircle2
+    CheckCircle2,
+    ArrowLeft,
+    HardDrive,
+    Search,
+    Grid,
+    List as ListIcon
 } from 'lucide-react'
-import { GlassCard, Button } from '../components/ui'
+import { GlassCard, Button, Input } from '../components/ui'
 
 // Types
 interface Credential {
@@ -28,17 +33,171 @@ interface Bucket {
     storage_class: string
 }
 
+interface GCSObject {
+    name: string
+    size: number
+    updated: string
+    contentType: string
+}
+
+// Sub-component: File Explorer (Full View)
+function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClose: () => void, electronAPI: any }) {
+    const [objects, setObjects] = useState<GCSObject[]>([])
+    const [loading, setLoading] = useState(false)
+    const [searchTerm, setSearchTerm] = useState('')
+    const [viewType, setViewType] = useState<'list' | 'grid'>('list')
+    const [currentPrefix, setCurrentPrefix] = useState('')
+
+    useEffect(() => {
+        loadObjects(bucket, currentPrefix)
+    }, [bucket, currentPrefix])
+
+    const loadObjects = async (bucketName: string, prefix: string) => {
+        setLoading(true)
+        setObjects([]) // Clear immediately to avoid stale data
+        try {
+            const result = await electronAPI?.gcp.listObjects(bucketName, prefix)
+            if (result?.success) {
+                setObjects(result.data)
+            }
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const filteredObjects = objects.filter(obj =>
+        obj.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    return (
+        <div className="space-y-4 h-full flex flex-col">
+            <div className="flex items-center gap-4 mb-2">
+                <Button variant="ghost" onClick={onClose} size="sm">
+                    <ArrowLeft size={20} />
+                </Button>
+                <div>
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                        <Database className="text-indigo-400" size={20} />
+                        {bucket}
+                    </h2>
+                    <p className="text-xs text-white/50">{objects.length} archivos • {currentPrefix || 'Raíz'}</p>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                    <div className="relative w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={14} />
+                        <Input
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                            placeholder="Buscar archivos..."
+                            className="pl-9 h-9 text-sm"
+                        />
+                    </div>
+                    <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
+                        <button
+                            onClick={() => setViewType('list')}
+                            className={`p-1.5 rounded ${viewType === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                        >
+                            <ListIcon size={16} />
+                        </button>
+                        <button
+                            onClick={() => setViewType('grid')}
+                            className={`p-1.5 rounded ${viewType === 'grid' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                        >
+                            <Grid size={16} />
+                        </button>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={() => loadObjects(bucket, currentPrefix)} loading={loading}>
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                    </Button>
+                </div>
+            </div>
+
+            <GlassCard className="flex-1 overflow-hidden p-0 border-0 bg-black/20">
+                <div className="h-full overflow-y-auto custom-scrollbar p-4">
+                    {loading && objects.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-white/40 gap-3">
+                            <RefreshCw className="animate-spin" size={32} />
+                            <p>Cargando contenidos...</p>
+                        </div>
+                    ) : filteredObjects.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-white/30 gap-3">
+                            <Folder size={48} className="opacity-20" />
+                            <p>Carpeta vacía o sin resultados</p>
+                        </div>
+                    ) : (
+                        viewType === 'list' ? (
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs text-white/40 uppercase border-b border-white/10">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">Nombre</th>
+                                        <th className="px-4 py-3 font-medium">Tamaño</th>
+                                        <th className="px-4 py-3 font-medium">Tipo</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {filteredObjects.map((obj, i) => (
+                                        <tr key={i} className="hover:bg-white/5 group transition-colors">
+                                            <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
+                                                <FileText size={16} className="text-indigo-400" />
+                                                <span className="truncate max-w-[300px]">{obj.name}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-white/50 font-mono text-xs">
+                                                {(obj.size / 1024).toFixed(1)} KB
+                                            </td>
+                                            <td className="px-4 py-3 text-white/40 text-xs truncate max-w-[150px]">
+                                                {obj.contentType || 'application/octet-stream'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                {filteredObjects.map((obj, i) => (
+                                    <motion.div
+                                        key={i}
+                                        whileHover={{ scale: 1.02 }}
+                                        className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
+                                    >
+                                        <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all">
+                                            <FileText size={24} />
+                                        </div>
+                                        <div className="min-w-0 w-full">
+                                            <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1">{obj.name}</p>
+                                            <p className="text-[10px] text-white/40">{(obj.size / 1024).toFixed(1)} KB</p>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        )
+                    )}
+                </div>
+            </GlassCard>
+        </div>
+    )
+}
+
 export default function GCPPage() {
     const [credentials, setCredentials] = useState<Credential[]>([])
     const [selectedCred, setSelectedCred] = useState('')
     const [buckets, setBuckets] = useState<any[]>([])
     const [isAuthenticated, setIsAuthenticated] = useState(false)
-    const [loading, setLoading] = useState(false)
+
+    // Split loading states correctly
+    const [authLoading, setAuthLoading] = useState(false)
+    const [dataLoading, setDataLoading] = useState(false)
+
     const [error, setError] = useState<string | null>(null)
 
-    // File Explorer State
-    const [selectedBucket, setSelectedBucket] = useState<string | null>(null)
-    const [objects, setObjects] = useState<any[]>([])
+    // View Management
+    const [currentView, setCurrentView] = useState<'dashboard' | 'explorer'>('dashboard')
+    const [activeExplorerBucket, setActiveExplorerBucket] = useState<string | null>(null)
+
+    // Inline Preview State (Dashboard)
+    const [selectedPreviewBucket, setSelectedPreviewBucket] = useState<string | null>(null)
+    const [previewObjects, setPreviewObjects] = useState<any[]>([])
 
     useEffect(() => {
         loadCredentials()
@@ -92,7 +251,7 @@ export default function GCPPage() {
         const credToUse = credPathOverride || selectedCred
         if (!credToUse) return
 
-        setLoading(true)
+        setAuthLoading(true)
         setError(null)
 
         try {
@@ -120,36 +279,60 @@ export default function GCPPage() {
         } catch (e: any) {
             setError(e.message)
         } finally {
-            setLoading(false)
+            setAuthLoading(false)
         }
     }
 
-    const handleBucketClick = async (bucketName: string) => {
-        if (selectedBucket === bucketName) {
-            setSelectedBucket(null) // Toggle off
+    const handlePreviewClick = async (bucketName: string) => {
+        if (selectedPreviewBucket === bucketName) {
+            setSelectedPreviewBucket(null) // Toggle off
             return
         }
 
-        setSelectedBucket(bucketName)
-        loadObjects(bucketName, '')
-    }
+        setSelectedPreviewBucket(bucketName)
+        setPreviewObjects([]) // Clear STALE data immediately
 
-    const loadObjects = async (bucket: string, prefix: string) => {
-        setLoading(true)
+        setDataLoading(true)
         try {
-            const result = await window.electronAPI?.gcp.listObjects(bucket, prefix)
+            const result = await window.electronAPI?.gcp.listObjects(bucketName, '')
             if (result?.success) {
-                setObjects(result.data)
+                setPreviewObjects(result.data || [])
             }
         } catch (e) {
             console.error(e)
         } finally {
-            setLoading(false)
+            setDataLoading(false)
         }
+    }
+
+    const openExplorer = (bucketName: string) => {
+        setActiveExplorerBucket(bucketName)
+        setCurrentView('explorer')
     }
 
     const getFileName = (pathStr: string) => {
         return pathStr.split(/[\\/]/).pop() || pathStr
+    }
+
+    // Render Logic
+    if (currentView === 'explorer' && activeExplorerBucket) {
+        return (
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key="explorer"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="h-[calc(100vh-100px)]"
+                >
+                    <FileExplorer
+                        bucket={activeExplorerBucket}
+                        onClose={() => setCurrentView('dashboard')}
+                        electronAPI={window.electronAPI}
+                    />
+                </motion.div>
+            </AnimatePresence>
+        )
     }
 
     return (
@@ -176,6 +359,7 @@ export default function GCPPage() {
                 )}
             </AnimatePresence>
 
+            {/* Credential Card */}
             <GlassCard className="p-6">
                 <div className="flex items-center gap-4 mb-4">
                     <div className={`p-3 rounded-lg ${isAuthenticated ? 'bg-green-500/20 text-green-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
@@ -186,7 +370,7 @@ export default function GCPPage() {
                         <p className="text-sm text-white/60">Selecciona tus credenciales de servicio</p>
                     </div>
                     <div className="ml-auto">
-                        <Button variant="secondary" onClick={handleUploadCredentials} disabled={loading}>
+                        <Button variant="secondary" onClick={handleUploadCredentials} disabled={authLoading}>
                             <UploadCloud size={16} className="mr-2" />
                             Importar Credencial
                         </Button>
@@ -231,15 +415,16 @@ export default function GCPPage() {
 
                     <Button
                         className="w-full"
-                        disabled={!selectedCred || loading}
+                        disabled={!selectedCred || authLoading}
                         onClick={() => handleAuthenticate()}
                     >
-                        {loading ? <RefreshCw className="animate-spin mr-2" /> : <Cloud className="mr-2" />}
+                        {authLoading ? <RefreshCw className="animate-spin mr-2" /> : <Cloud className="mr-2" />}
                         {isAuthenticated ? 'Re-conectar a GCP' : 'Conectar a GCP'}
                     </Button>
                 </div>
             </GlassCard>
 
+            {/* Buckets Section */}
             <AnimatePresence>
                 {isAuthenticated && (
                     <motion.div
@@ -249,7 +434,7 @@ export default function GCPPage() {
                         <GlassCard className="p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
-                                    <Database className="text-indigo-400" />
+                                    <HardDrive className="text-indigo-400" />
                                     <h3 className="text-lg font-medium">Buckets</h3>
                                     <span className="text-sm text-white/40">{buckets.length} buckets disponibles</span>
                                 </div>
@@ -258,52 +443,72 @@ export default function GCPPage() {
                                 </Button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-4">
                                 {buckets.map((bucket) => (
-                                    <div key={bucket.name} className="space-y-2">
-                                        <div
-                                            className={`p-4 rounded-lg border bg-white/5 border-white/10 hover:border-indigo-500/50 transition-colors cursor-pointer ${selectedBucket === bucket.name ? 'border-indigo-500 bg-indigo-500/10' : ''}`}
-                                            onClick={() => handleBucketClick(bucket.name)}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-white/5 rounded-lg">
-                                                    <Cloud className="text-white/60" size={20} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-medium truncate">{bucket.name}</p>
-                                                    <p className="text-xs text-white/40 uppercase">{bucket.location} • {bucket.storage_class}</p>
-                                                </div>
-                                                {selectedBucket === bucket.name && <ChevronRight className="ml-auto text-indigo-400" />}
+                                    <div key={bucket.name} className="flex flex-col gap-2 p-4 rounded-lg border bg-white/5 border-white/10 hover:border-indigo-500/50 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-white/5 rounded-lg">
+                                                <HardDrive className="text-white/60" size={20} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium truncate">{bucket.name}</p>
+                                                <p className="text-xs text-white/40 uppercase">{bucket.location} • {bucket.storage_class}</p>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    onClick={() => openExplorer(bucket.name)}
+                                                >
+                                                    <Folder size={14} className="mr-2 text-indigo-400" />
+                                                    Abrir Explorador
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => handlePreviewClick(bucket.name)}
+                                                    className={selectedPreviewBucket === bucket.name ? 'bg-white/10' : ''}
+                                                >
+                                                    {selectedPreviewBucket === bucket.name ? <ChevronRight className="rotate-90" /> : <ChevronRight />}
+                                                </Button>
                                             </div>
                                         </div>
 
-                                        {/* File Explorer Inline */}
+                                        {/* File Explorer Inline Preview */}
                                         <AnimatePresence>
-                                            {selectedBucket === bucket.name && (
+                                            {selectedPreviewBucket === bucket.name && (
                                                 <motion.div
                                                     initial={{ height: 0, opacity: 0 }}
                                                     animate={{ height: 'auto', opacity: 1 }}
                                                     exit={{ height: 0, opacity: 0 }}
                                                     className="overflow-hidden"
                                                 >
-                                                    <div className="ml-8 p-3 rounded-lg bg-black/20 border border-white/5 text-sm">
+                                                    <div className="ml-8 mt-2 p-3 rounded-lg bg-black/20 border border-white/5 text-sm">
                                                         <h4 className="text-xs font-bold text-white/40 mb-2 uppercase flex items-center gap-2">
                                                             <Folder size={12} />
-                                                            Archivos en {bucket.name}
+                                                            Vista Rápida
                                                         </h4>
-                                                        {loading && objects.length === 0 ? (
+                                                        {dataLoading && previewObjects.length === 0 ? (
                                                             <div className="text-center py-2"><RefreshCw className="animate-spin inline mr-2" /> Cargando...</div>
-                                                        ) : objects.length === 0 ? (
-                                                            <div className="text-white/30 italic">Bucket vacío o sin permisos</div>
+                                                        ) : previewObjects.length === 0 ? (
+                                                            <div className="text-white/30 italic">Carpeta vacía o sin resultados</div>
                                                         ) : (
-                                                            <ul className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
-                                                                {objects.map((obj, i) => (
+                                                            <ul className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                                                {previewObjects.slice(0, 5).map((obj, i) => (
                                                                     <li key={i} className="flex items-center gap-2 py-1 px-2 hover:bg-white/5 rounded group cursor-default">
                                                                         <FileText size={14} className="text-indigo-300 group-hover:text-indigo-200" />
                                                                         <span className="truncate flex-1 group-hover:text-white transition-colors">{obj.name}</span>
-                                                                        <span className="text-xs text-white/30">{Math.round(obj.size / 1024)} KB</span>
+                                                                        <span className="text-xs text-white/30">{(obj.size / 1024).toFixed(1)} KB</span>
                                                                     </li>
                                                                 ))}
+                                                                {previewObjects.length > 5 && (
+                                                                    <li className="text-center pt-2">
+                                                                        <button onClick={() => openExplorer(bucket.name)} className="text-xs text-indigo-400 hover:text-indigo-300">
+                                                                            Ver {previewObjects.length - 5} archivos más...
+                                                                        </button>
+                                                                    </li>
+                                                                )}
                                                             </ul>
                                                         )}
                                                     </div>
