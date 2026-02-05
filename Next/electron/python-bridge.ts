@@ -97,6 +97,13 @@ function runPythonCode(code: string): Promise<PythonResult> {
  * Registra los handlers IPC para GCP
  */
 export function registerGCPHandlers() {
+    let activeCredentialPath: string | null = null
+
+    const getAuthHeader = () => {
+        if (!activeCredentialPath) return ''
+        return `import os; os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'${activeCredentialPath}';`
+    }
+
     // Listar credenciales GCP disponibles
     ipcMain.handle('gcp:listCredentials', async () => {
         const code = `
@@ -123,13 +130,17 @@ print(json.dumps(result))
 
     // Autenticar con credenciales
     ipcMain.handle('gcp:authenticate', async (_, credPath: string) => {
+        activeCredentialPath = credPath
         const code = `
+${getAuthHeader()}
 import os, json
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = r'${credPath}'
 from google.cloud import storage
-client = storage.Client()
-buckets = [b.name for b in client.list_buckets()]
-print(json.dumps({'authenticated': True, 'buckets': buckets, 'project': client.project}))
+try:
+    client = storage.Client()
+    buckets = [b.name for b in client.list_buckets()]
+    print(json.dumps({'authenticated': True, 'buckets': buckets, 'project': client.project}))
+except Exception as e:
+    print(json.dumps({'authenticated': False, 'error': str(e)}))
 `
         return runPythonCode(code)
     })
@@ -137,11 +148,15 @@ print(json.dumps({'authenticated': True, 'buckets': buckets, 'project': client.p
     // Listar buckets
     ipcMain.handle('gcp:listBuckets', async () => {
         const code = `
+${getAuthHeader()}
 import json
 from google.cloud import storage
-client = storage.Client()
-buckets = [{'name': b.name, 'location': b.location, 'storage_class': b.storage_class} for b in client.list_buckets()]
-print(json.dumps(buckets))
+try:
+    client = storage.Client()
+    buckets = [{'name': b.name, 'location': b.location, 'storage_class': b.storage_class} for b in client.list_buckets()]
+    print(json.dumps(buckets))
+except:
+    print(json.dumps([]))
 `
         return runPythonCode(code)
     })
@@ -149,20 +164,24 @@ print(json.dumps(buckets))
     // Listar objetos de un bucket
     ipcMain.handle('gcp:listObjects', async (_, bucketName: string, prefix: string = '') => {
         const code = `
+${getAuthHeader()}
 import json
 from google.cloud import storage
-client = storage.Client()
-bucket = client.bucket('${bucketName}')
-blobs = list(bucket.list_blobs(prefix='${prefix}', delimiter='/'))
-objects = []
-for blob in blobs:
-    objects.append({
-        'name': blob.name,
-        'size': blob.size,
-        'updated': blob.updated.isoformat() if blob.updated else None,
-        'content_type': blob.content_type
-    })
-print(json.dumps(objects))
+try:
+    client = storage.Client()
+    bucket = client.bucket('${bucketName}')
+    blobs = list(bucket.list_blobs(prefix='${prefix}', delimiter='/'))
+    objects = []
+    for blob in blobs:
+        objects.append({
+            'name': blob.name,
+            'size': blob.size,
+            'updated': blob.updated.isoformat() if blob.updated else None,
+            'content_type': blob.content_type
+        })
+    print(json.dumps(objects))
+except:
+    print(json.dumps([]))
 `
         return runPythonCode(code)
     })
@@ -170,6 +189,7 @@ print(json.dumps(objects))
     // Montar bucket como unidad
     ipcMain.handle('gcp:mountBucket', async (_, bucketName: string, driveLetter: string) => {
         const code = `
+${getAuthHeader()}
 import json, sys
 sys.path.insert(0, '.')
 from rclone_manager import RcloneManager
@@ -196,6 +216,7 @@ print(json.dumps({'success': success, 'message': message}))
     // Iniciar sincronización
     ipcMain.handle('gcp:startSync', async (_, localPath: string, bucketName: string) => {
         const code = `
+${getAuthHeader()}
 import json, sys
 sys.path.insert(0, '.')
 from file_watcher import RealTimeSync
