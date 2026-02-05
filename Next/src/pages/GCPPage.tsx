@@ -42,6 +42,8 @@ interface GCSObject {
     size: number
     updated: string
     contentType: string
+    fileCount?: number
+    folderCount?: number
 }
 
 type SyncStatus = 'pending' | 'uploading' | 'synced'
@@ -732,8 +734,16 @@ function FileExplorer({
                                                         {formatDate(obj.updated)}
                                                     </td>
                                                 )}
-                                                <td className="px-4 py-2 text-white/40 text-xs truncate max-w-[150px]">
-                                                    {getFileType(obj)}
+                                                <td className="px-4 py-2 text-white/40 text-xs truncate max-w-[200px]">
+                                                    {obj.contentType === 'directory' ? (
+                                                        <span className="flex items-center gap-1">
+                                                            <span>{obj.fileCount || 0} archivos</span>
+                                                            <span className="text-white/20">•</span>
+                                                            <span>{obj.folderCount || 0} carpetas</span>
+                                                        </span>
+                                                    ) : (
+                                                        obj.contentType?.split('/').pop() || 'Archivo'
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-2 text-white/50 font-mono text-xs whitespace-nowrap">
                                                     {formatSize(obj.size)}

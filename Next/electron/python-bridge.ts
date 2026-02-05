@@ -314,26 +314,39 @@ try:
     for blob in blobs:
         objects.append({
             'name': blob.name,
-            'size': blob.size,
+            'size': blob.size or 0,
             'updated': blob.updated.isoformat() if blob.updated else None,
-            'contentType': blob.content_type
+            'contentType': blob.content_type,
+            'fileCount': 0,
+            'folderCount': 0
         })
     
-    # Agregar Carpetas (prefixes) con tamaño calculado
+    # Agregar Carpetas (prefixes) con estadísticas completas
     for p in iterator.prefixes:
-        # Calcular tamaño total de la carpeta
+        # Listar TODO bajo este prefijo para contar
         folder_blobs = list(bucket.list_blobs(prefix=p))
-        folder_size = sum(b.size for b in folder_blobs)
+        folder_size = sum(b.size or 0 for b in folder_blobs)
+        
+        # Contar archivos (no terminan en /) y subcarpetas (terminan en /)
+        file_count = len([b for b in folder_blobs if not b.name.endswith('/')])
+        
+        # Contar subcarpetas directas usando delimiter
+        sub_iterator = bucket.list_blobs(prefix=p, delimiter='/')
+        list(sub_iterator)  # Consume to get prefixes
+        folder_count = len(list(sub_iterator.prefixes))
         
         objects.append({
             'name': p,
             'size': folder_size,
             'updated': None,
-            'contentType': 'directory'
+            'contentType': 'directory',
+            'fileCount': file_count,
+            'folderCount': folder_count
         })
         
     print(json.dumps(objects))
 except Exception as e:
+    print(f"Error: {str(e)}")
     print(json.dumps([]))
 `
         return runPythonCode(code)
