@@ -220,6 +220,8 @@ function stopBackgroundPython() {
  */
 export function registerGCPHandlers() {
     let activeCredentialPath: string | null = null
+    const fs = require('fs')
+    const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
 
     const getAuthHeader = () => {
         if (!activeCredentialPath) return ''
@@ -254,11 +256,13 @@ print(json.dumps(result))
     ipcMain.handle('gcp:authenticate', async (_, credPath: string) => {
         activeCredentialPath = credPath
 
-        // Persistir sesión
+        // Persistir sesión (actualizado: usa gcp:saveSession)
         try {
-            const fs = require('fs')
-            const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
-            fs.writeFileSync(sessionPath, JSON.stringify({ lastCredentialPath: credPath }))
+            let session = {}
+            if (fs.existsSync(sessionPath)) {
+                session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
+            }
+            fs.writeFileSync(sessionPath, JSON.stringify({ ...session, lastCredentialPath: credPath }))
         } catch (e) {
             console.error('Error saving session:', e)
         }
@@ -587,26 +591,6 @@ upload_folder()
         return { success: false, cancelled: true }
     })
 
-    // Gestión de Sesión
-    const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
-    const fs = require('fs')
-
-    ipcMain.handle('gcp:loadSession', async () => {
-        try {
-            if (fs.existsSync(sessionPath)) {
-                const session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
-                // Restaurar credencial si existe
-                if (session.lastCredentialPath) {
-                    activeCredentialPath = session.lastCredentialPath
-                }
-                return { success: true, data: session }
-            }
-        } catch (e) {
-            console.error('Error loading session:', e)
-        }
-        return { success: false }
-    })
-
     // --- NEW: Cleanup Suite Handlers ---
 
     // Eliminar archivo/objeto
@@ -678,6 +662,25 @@ except Exception as e:
         return runPythonCode(code)
     })
 
+
+    // Obtener sesión guardada
+    ipcMain.handle('gcp:getSession', async () => {
+        try {
+            if (fs.existsSync(sessionPath)) {
+                const data = fs.readFileSync(sessionPath, 'utf8')
+                const session = JSON.parse(data)
+                // If there's a credential path, set it as active
+                if (session.lastCredentialPath) {
+                    activeCredentialPath = session.lastCredentialPath
+                }
+                return { success: true, data: session }
+            }
+            return { success: true, data: {} }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
     ipcMain.handle('gcp:saveSession', async (_, data: any) => {
         try {
             let session = {}
@@ -693,6 +696,29 @@ except Exception as e:
             }
 
             return { success: true }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
+    // Auto-lanzamiento al iniciar Windows
+    ipcMain.handle('gcp:setAutoLaunch', async (_, enabled: boolean) => {
+        try {
+            app.setLoginItemSettings({
+                openAtLogin: enabled,
+                path: app.getPath('exe'),
+                args: ['--hidden']
+            })
+            return { success: true }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    })
+
+    ipcMain.handle('gcp:getAutoLaunch', async () => {
+        try {
+            const settings = app.getLoginItemSettings()
+            return { success: true, enabled: settings.openAtLogin }
         } catch (e: any) {
             return { success: false, error: e.message }
         }

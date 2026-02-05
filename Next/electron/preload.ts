@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         saveSession: (data: any) => ipcRenderer.invoke('gcp:saveSession', data),
         deleteObject: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:deleteObject', bucket, objectName),
         renameObject: (bucket: string, oldName: string, newName: string) => ipcRenderer.invoke('gcp:renameObject', bucket, oldName, newName),
-        getFileContent: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:getFileContent', bucket, objectName)
+        getFileContent: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:getFileContent', bucket, objectName),
+        getSession: () => ipcRenderer.invoke('gcp:getSession'),
+        setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('gcp:setAutoLaunch', enabled),
+        getAutoLaunch: () => ipcRenderer.invoke('gcp:getAutoLaunch')
     }
 })

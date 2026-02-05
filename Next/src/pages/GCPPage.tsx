@@ -98,6 +98,43 @@ function FileExplorer({
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
     const [previewFile, setPreviewFile] = useState<{ name: string, content: string } | null>(null)
     const [currentLocalPath, setCurrentLocalPath] = useState<string>('')  // Relative path within sync folder
+    const [autoLaunch, setAutoLaunch] = useState(false)
+
+    // Load session and check auto-launch on mount
+    useEffect(() => {
+        const init = async () => {
+            const sess = await electronAPI.gcp.getSession()
+            if (sess?.success && sess.data) {
+                const { lastSyncPath, lastCredentialPath } = sess.data
+                if (lastSyncPath) setLastSyncPath(lastSyncPath)
+
+                // If we have credentials, auto-authenticate
+                if (lastCredentialPath) {
+                    onToast('Restaurando sesión...', 'info')
+                    const authRes = await electronAPI.gcp.authenticate(lastCredentialPath)
+                    if (authRes.authenticated) {
+                        onToast('Sesión restaurada correctamente', 'success')
+                        // Initial load will be triggered by useEffect dependencies
+                    }
+                }
+            }
+
+            const al = await electronAPI.gcp.getAutoLaunch()
+            if (al?.success) setAutoLaunch(al.enabled)
+        }
+        init()
+    }, [])
+
+    const handleToggleAutoLaunch = async () => {
+        const newState = !autoLaunch
+        const res = await electronAPI.gcp.setAutoLaunch(newState)
+        if (res.success) {
+            setAutoLaunch(newState)
+            onToast(newState ? 'Auto-inicio activado' : 'Auto-inicio desactivado', 'success')
+        } else {
+            onToast('Error al cambiar auto-inicio', 'error')
+        }
+    }
 
     // Auto-refresh when sync path or subfolder changes (Local-First trigger)
     useEffect(() => {
@@ -355,7 +392,18 @@ function FileExplorer({
                         Sincronizar Carpeta Local
                     </Button>
 
-                    <div className="ml-auto flex items-center gap-2">
+                    <div className="ml-auto flex items-center gap-3 pr-2">
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <span className="text-[11px] text-white/40 group-hover:text-white/60 transition-colors uppercase font-medium tracking-wider">
+                                Auto-inicio
+                            </span>
+                            <div
+                                onClick={handleToggleAutoLaunch}
+                                className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-200 ease-in-out ${autoLaunch ? 'bg-indigo-500' : 'bg-white/10'}`}
+                            >
+                                <div className={`w-3 h-3 bg-white rounded-full shadow-lg transform transition-transform duration-200 ease-in-out ${autoLaunch ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </div>
+                        </label>
                         <div className="relative w-64">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={14} />
                             <Input
