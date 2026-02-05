@@ -16,7 +16,8 @@ import {
     HardDrive,
     Search,
     Grid,
-    List as ListIcon
+    List as ListIcon,
+    Trash2
 } from 'lucide-react'
 import { GlassCard, Button, Input, Toast } from '../components/ui'
 
@@ -94,6 +95,8 @@ function FileExplorer({
     const [viewType, setViewType] = useState<'list' | 'grid'>('list')
     const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
+    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+    const [previewFile, setPreviewFile] = useState<{ name: string, content: string } | null>(null)
 
     useEffect(() => {
         loadObjects(bucket, currentPrefix)
@@ -230,6 +233,50 @@ function FileExplorer({
         }
     }
 
+    // Selection Helpers
+    const toggleSelection = (name: string) => {
+        setSelectedFiles(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(name)) newSet.delete(name)
+            else newSet.add(name)
+            return newSet
+        })
+    }
+
+    const selectAll = () => {
+        if (selectedFiles.size === filteredObjects.length) {
+            setSelectedFiles(new Set())
+        } else {
+            setSelectedFiles(new Set(filteredObjects.map(o => o.name)))
+        }
+    }
+
+    // Delete Selected Files
+    const handleDeleteSelected = async () => {
+        if (selectedFiles.size === 0) return
+        setActionLoading(true)
+        onToast(`Eliminando ${selectedFiles.size} archivos...`, 'info')
+        for (const name of selectedFiles) {
+            await electronAPI.gcp.deleteObject(bucket, name)
+        }
+        setSelectedFiles(new Set())
+        loadObjects(bucket, currentPrefix)
+        onToast('Eliminación completada', 'success')
+        setActionLoading(false)
+    }
+
+    // Preview File Content
+    const handlePreview = async (objectName: string) => {
+        setActionLoading(true)
+        const res = await electronAPI.gcp.getFileContent(bucket, objectName)
+        if (res.success) {
+            setPreviewFile({ name: objectName, content: res.content })
+        } else {
+            onToast('No se pudo previsualizar el archivo', 'error')
+        }
+        setActionLoading(false)
+    }
+
     const filteredObjects = objects.filter(obj =>
         obj.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
@@ -326,40 +373,73 @@ function FileExplorer({
                         </div>
                     ) : (
                         viewType === 'list' ? (
-                            <table className="w-full text-sm text-left">
-                                <thead className="text-xs text-white/40 uppercase border-b border-white/10">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium">Nombre</th>
-                                        <th className="px-4 py-3 font-medium">Tamaño</th>
-                                        <th className="px-4 py-3 font-medium">Tipo</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {filteredObjects.map((obj, i) => (
-                                        <tr key={i} className="hover:bg-white/5 group transition-colors">
-                                            <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
-                                                <div className="relative">
-                                                    {obj.contentType === 'directory' ? (
-                                                        <Folder size={16} className="text-yellow-500" />
-                                                    ) : (
-                                                        <FileText size={16} className="text-indigo-400" />
-                                                    )}
-                                                    <div className="absolute -bottom-1 -right-1">
-                                                        <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
-                                                    </div>
-                                                </div>
-                                                <span className="truncate max-w-[300px]">{obj.name}</span>
-                                            </td>
-                                            <td className="px-4 py-3 text-white/50 font-mono text-xs">
-                                                {(obj.size / 1024).toFixed(1)} KB
-                                            </td>
-                                            <td className="px-4 py-3 text-white/40 text-xs truncate max-w-[150px]">
-                                                {obj.contentType || 'application/octet-stream'}
-                                            </td>
+                            <>
+                                {/* Action Bar */}
+                                {selectedFiles.size > 0 && (
+                                    <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg mb-2">
+                                        <span className="text-xs text-red-300">{selectedFiles.size} seleccionados</span>
+                                        <Button size="sm" variant="secondary" onClick={handleDeleteSelected} disabled={actionLoading} className="bg-red-500/20 hover:bg-red-500/40 text-red-300 border-red-500/30">
+                                            <Trash2 size={14} className="mr-1" /> Eliminar
+                                        </Button>
+                                    </div>
+                                )}
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-white/40 uppercase border-b border-white/10">
+                                        <tr>
+                                            <th className="px-2 py-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedFiles.size === filteredObjects.length && filteredObjects.length > 0}
+                                                    onChange={selectAll}
+                                                    className="w-4 h-4 rounded border-white/20 bg-transparent accent-indigo-500"
+                                                />
+                                            </th>
+                                            <th className="px-4 py-3 font-medium">Nombre</th>
+                                            <th className="px-4 py-3 font-medium">Tamaño</th>
+                                            <th className="px-4 py-3 font-medium">Tipo</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {filteredObjects.map((obj, i) => (
+                                            <tr key={i} className="hover:bg-white/5 group transition-colors">
+                                                <td className="px-2 py-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedFiles.has(obj.name)}
+                                                        onChange={() => toggleSelection(obj.name)}
+                                                        className="w-4 h-4 rounded border-white/20 bg-transparent accent-indigo-500"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
+                                                    <div className="relative">
+                                                        {obj.contentType === 'directory' ? (
+                                                            <Folder size={16} className="text-yellow-500" />
+                                                        ) : (
+                                                            <FileText size={16} className="text-indigo-400" />
+                                                        )}
+                                                        <div className="absolute -bottom-1 -right-1">
+                                                            <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
+                                                        </div>
+                                                    </div>
+                                                    <span
+                                                        className="truncate max-w-[300px] cursor-pointer hover:text-indigo-300 hover:underline"
+                                                        title={obj.name}
+                                                        onClick={() => handlePreview(obj.name)}
+                                                    >
+                                                        {obj.name.split(/[/\\]/).pop()}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-white/50 font-mono text-xs">
+                                                    {(obj.size / 1024).toFixed(1)} KB
+                                                </td>
+                                                <td className="px-4 py-3 text-white/40 text-xs truncate max-w-[150px]">
+                                                    {obj.contentType || 'application/octet-stream'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </>
                         ) : (
                             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                 {filteredObjects.map((obj, i) => (
@@ -375,7 +455,9 @@ function FileExplorer({
                                             </div>
                                         </div>
                                         <div className="min-w-0 w-full">
-                                            <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1">{obj.name}</p>
+                                            <p className="text-xs font-medium truncate text-white/80 group-hover:text-white mb-1" title={obj.name}>
+                                                {obj.name.split(/[/\\]/).pop()}
+                                            </p>
                                             <p className="text-[10px] text-white/40">{(obj.size / 1024).toFixed(1)} KB</p>
                                         </div>
                                     </motion.div>
@@ -385,6 +467,35 @@ function FileExplorer({
                     )}
                 </div>
             </GlassCard>
+
+            {/* Preview Modal */}
+            <AnimatePresence>
+                {previewFile && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                        onClick={() => setPreviewFile(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            exit={{ scale: 0.9 }}
+                            className="bg-gray-900/90 border border-white/10 rounded-xl max-w-3xl w-full max-h-[80vh] overflow-hidden shadow-2xl m-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                                <h3 className="text-white font-semibold truncate">{previewFile.name.split(/[/\\]/).pop()}</h3>
+                                <Button size="sm" variant="ghost" onClick={() => setPreviewFile(null)}>✕</Button>
+                            </div>
+                            <pre className="p-4 text-xs text-white/80 font-mono overflow-auto max-h-[65vh] whitespace-pre-wrap">
+                                {previewFile.content}
+                            </pre>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

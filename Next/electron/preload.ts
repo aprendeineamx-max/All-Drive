@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return () => ipcRenderer.removeListener('gcp:sync_event', subscription)
         },
         listLocalFolder: (path: string) => ipcRenderer.invoke('gcp:listLocalFolder', path),
-        loadSession: () => ipcRenderer.invoke('gcp:loadSession')
+        loadSession: () => ipcRenderer.invoke('gcp:loadSession'),
+        saveSession: (data: any) => ipcRenderer.invoke('gcp:saveSession', data),
+        deleteObject: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:deleteObject', bucket, objectName),
+        renameObject: (bucket: string, oldName: string, newName: string) => ipcRenderer.invoke('gcp:renameObject', bucket, oldName, newName),
+        getFileContent: (bucket: string, objectName: string) => ipcRenderer.invoke('gcp:getFileContent', bucket, objectName)
     }
 })

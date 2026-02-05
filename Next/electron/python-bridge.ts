@@ -607,6 +607,68 @@ upload_folder()
         return { success: false }
     })
 
+    // --- NEW: Cleanup Suite Handlers ---
+
+    // Eliminar archivo/objeto
+    ipcMain.handle('gcp:deleteObject', async (event, bucketName, objectName) => {
+        const code = `
+${getAuthHeader()}
+from google.cloud import storage
+import json
+try:
+    print(f"Eliminando {objectName}...")
+    client = storage.Client()
+    bucket = client.bucket('${bucketName}')
+    blob = bucket.blob('${objectName}')
+    blob.delete()
+    print("Eliminado correctamente")
+    print(json.dumps({'success': True}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e)}))
+`
+        return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
+    })
+
+    // Renombrar objeto
+    ipcMain.handle('gcp:renameObject', async (event, bucketName, oldName, newName) => {
+        const code = `
+${getAuthHeader()}
+from google.cloud import storage
+import json
+try:
+    print(f"Renombrando {oldName} -> {newName}...")
+    client = storage.Client()
+    bucket = client.bucket('${bucketName}')
+    blob = bucket.blob('${oldName}')
+    bucket.rename_blob(blob, '${newName}')
+    print("Renombrado correctamente")
+    print(json.dumps({'success': True}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e)}))
+`
+        return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
+    })
+
+    // Leer contenido (Preview)
+    ipcMain.handle('gcp:getFileContent', async (event, bucketName, objectName) => {
+        const code = `
+${getAuthHeader()}
+from google.cloud import storage
+import json
+try:
+    client = storage.Client()
+    bucket = client.bucket('${bucketName}')
+    blob = bucket.blob('${objectName}')
+    
+    # Read first 10KB for preview safety
+    content = blob.download_as_text(start=0, end=10240) 
+    print(json.dumps({'success': True, 'content': content}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e)}))
+`
+        return runPythonCode(code)
+    })
+
     ipcMain.handle('gcp:saveSession', async (_, data: any) => {
         try {
             let session = {}
