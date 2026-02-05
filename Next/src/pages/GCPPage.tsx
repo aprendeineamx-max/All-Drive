@@ -18,7 +18,7 @@ import {
     Grid,
     List as ListIcon
 } from 'lucide-react'
-import { GlassCard, Button, Input } from '../components/ui'
+import { GlassCard, Button, Input, Toast } from '../components/ui'
 
 // Types
 interface Credential {
@@ -27,11 +27,6 @@ interface Credential {
     client_email: string
 }
 
-interface Bucket {
-    name: string
-    location: string
-    storage_class: string
-}
 
 interface GCSObject {
     name: string
@@ -270,6 +265,45 @@ function FileExplorer({
     )
 }
 
+// Log Terminal Component
+function LogTerminal({ logs, onClose, clearLogs }: { logs: string[], onClose: () => void, clearLogs: () => void }) {
+    const scrollRef = React.useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }
+    }, [logs])
+
+    return (
+        <GlassCard className="fixed bottom-0 left-0 right-0 h-48 m-4 border-t border-white/10 flex flex-col shadow-2xl z-40 bg-black/90 backdrop-blur-xl">
+            <div className="flex items-center justify-between p-2 border-b border-white/10 bg-white/5">
+                <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <h3 className="text-xs font-mono uppercase text-white/60">Terminal de Sincronización</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={clearLogs} className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white" title="Limpiar logs">
+                        <RefreshCw size={12} />
+                    </button>
+                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white">
+                        <ChevronRight className="rotate-90" size={14} />
+                    </button>
+                </div>
+            </div>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-xs text-green-400/80 space-y-1">
+                {logs.length === 0 && <span className="text-white/20 italic">Esperando actividad...</span>}
+                {logs.map((log, i) => (
+                    <div key={i} className="break-all border-l-2 border-transparent hover:border-white/20 pl-2">
+                        <span className="text-white/30 mr-2">[{new Date().toLocaleTimeString()}]</span>
+                        {log}
+                    </div>
+                ))}
+            </div>
+        </GlassCard>
+    )
+}
+
 export default function GCPPage() {
     const [credentials, setCredentials] = useState<Credential[]>([])
     const [selectedCred, setSelectedCred] = useState('')
@@ -293,6 +327,10 @@ export default function GCPPage() {
     // Notifications
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'success' | 'error' | 'info' }[]>([])
 
+    // Logs
+    const [logs, setLogs] = useState<string[]>([])
+    const [showLogs, setShowLogs] = useState(false)
+
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Math.random().toString(36).substr(2, 9)
         setToasts(prev => [...prev, { id, message, type }])
@@ -305,6 +343,16 @@ export default function GCPPage() {
     useEffect(() => {
         loadCredentials()
         checkSession()
+
+        // Subscribe to logs
+        const cleanup = window.electronAPI?.gcp.onLog((msg) => {
+            setLogs(prev => [...prev, msg])
+            setShowLogs(true) // Auto-show logs on activity
+        })
+
+        return () => {
+            if (cleanup) cleanup()
+        }
     }, [])
 
     const checkSession = async () => {
@@ -341,7 +389,7 @@ export default function GCPPage() {
         try {
             const result = await window.electronAPI?.gcp.uploadCredentials()
             if (result?.success) {
-                loadCredentials() // Reload list
+                loadCredentials()
                 setCredentials(prev => [...prev, { path: result.data!, project_id: 'New', client_email: 'New' }])
                 setSelectedCred(result.data!)
                 showToast('Credencial importada correctamente', 'success')
@@ -363,16 +411,12 @@ export default function GCPPage() {
             const result = await window.electronAPI?.gcp.authenticate(credToUse)
             if (result?.success && result.data.authenticated) {
                 setIsAuthenticated(true)
-                // Usar la lista devuelta por auth si existe, si no, listar explícitamente
                 const bucketList = result.data.buckets || []
-
-                // Formatear simple strings a objetos si es necesario
                 const formattedBuckets = bucketList.map((b: any) =>
                     typeof b === 'string' ? { name: b, location: 'UNKNOWN', storage_class: 'STANDARD' } : b
                 )
                 setBuckets(formattedBuckets)
 
-                // Si no hay buckets en auth response, intentar listBuckets explícito
                 if (formattedBuckets.length === 0) {
                     const listResult = await window.electronAPI?.gcp.listBuckets()
                     if (listResult?.success) setBuckets(listResult.data)
@@ -461,6 +505,23 @@ export default function GCPPage() {
                         ))}
                     </AnimatePresence>
                 </div>
+
+                {/* Log Terminal Overlay */}
+                <AnimatePresence>
+                    {showLogs && (
+                        <motion.div
+                            initial={{ y: 200, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: 200, opacity: 0 }}
+                        >
+                            <LogTerminal
+                                logs={logs}
+                                onClose={() => setShowLogs(false)}
+                                clearLogs={() => setLogs([])}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </>
         )
     }
@@ -468,11 +529,19 @@ export default function GCPPage() {
     return (
         <div className="space-y-6 relative min-h-screen">
             <header>
-                <h2 className="text-2xl font-bold mb-2 text-white flex items-center gap-2">
-                    <Cloud className="text-indigo-400" />
-                    Google Cloud Storage
-                </h2>
-                <p className="text-white/60">Gestiona tus buckets y sincronización</p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold mb-2 text-white flex items-center gap-2">
+                            <Cloud className="text-indigo-400" />
+                            Google Cloud Storage
+                        </h2>
+                        <p className="text-white/60">Gestiona tus buckets y sincronización</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setShowLogs(!showLogs)} className={showLogs ? 'bg-white/10' : ''}>
+                        <FileText size={16} className="mr-2" />
+                        Logs
+                    </Button>
+                </div>
             </header>
 
             <AnimatePresence>
@@ -649,6 +718,23 @@ export default function GCPPage() {
                                 ))}
                             </div>
                         </GlassCard>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Log Terminal Overlay (Global for Dashboard) */}
+            <AnimatePresence>
+                {showLogs && (
+                    <motion.div
+                        initial={{ y: 200, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 200, opacity: 0 }}
+                    >
+                        <LogTerminal
+                            logs={logs}
+                            onClose={() => setShowLogs(false)}
+                            clearLogs={() => setLogs([])}
+                        />
                     </motion.div>
                 )}
             </AnimatePresence>

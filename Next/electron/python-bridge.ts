@@ -16,10 +16,13 @@ interface PythonResult {
     error?: string
 }
 
+// Helper type for log callback
+type LogCallback = (msg: string) => void
+
 /**
  * Ejecuta un comando Python y devuelve el resultado
  */
-function runPythonScript(scriptPath: string, args: string[] = []): Promise<PythonResult> {
+function runPythonScript(scriptPath: string, args: string[] = [], onLog?: LogCallback): Promise<PythonResult> {
     return new Promise((resolve) => {
         const fullPath = path.join(LEGACY_PATH, scriptPath)
         const pythonProcess = spawn('python', [fullPath, ...args], {
@@ -31,17 +34,25 @@ function runPythonScript(scriptPath: string, args: string[] = []): Promise<Pytho
         let stderr = ''
 
         pythonProcess.stdout.on('data', (data) => {
-            stdout += data.toString()
+            const str = data.toString()
+            stdout += str
+            if (onLog) onLog(str)
         })
 
         pythonProcess.stderr.on('data', (data) => {
-            stderr += data.toString()
+            const str = data.toString()
+            stderr += str
+            if (onLog) onLog(`[STDERR] ${str}`)
         })
 
         pythonProcess.on('close', (code) => {
             if (code === 0) {
                 try {
-                    const data = JSON.parse(stdout.trim())
+                    // Try to parse the LAST line as JSON result if possible, 
+                    // or accumulative stdout
+                    const lines = stdout.trim().split('\n')
+                    const lastLine = lines[lines.length - 1]
+                    const data = JSON.parse(lastLine)
                     resolve({ success: true, data })
                 } catch {
                     resolve({ success: true, data: stdout.trim() })
@@ -60,7 +71,7 @@ function runPythonScript(scriptPath: string, args: string[] = []): Promise<Pytho
 /**
  * Ejecuta código Python inline
  */
-function runPythonCode(code: string): Promise<PythonResult> {
+function runPythonCode(code: string, onLog?: LogCallback): Promise<PythonResult> {
     return new Promise((resolve) => {
         const pythonProcess = spawn('python', ['-c', code], {
             cwd: LEGACY_PATH,
@@ -71,17 +82,23 @@ function runPythonCode(code: string): Promise<PythonResult> {
         let stderr = ''
 
         pythonProcess.stdout.on('data', (data) => {
-            stdout += data.toString()
+            const str = data.toString()
+            stdout += str
+            if (onLog) onLog(str)
         })
 
         pythonProcess.stderr.on('data', (data) => {
-            stderr += data.toString()
+            const str = data.toString()
+            stderr += str
+            if (onLog) onLog(`[STDERR] ${str}`)
         })
 
         pythonProcess.on('close', (code) => {
             if (code === 0) {
                 try {
-                    const data = JSON.parse(stdout.trim())
+                    const lines = stdout.trim().split('\n')
+                    const lastLine = lines[lines.length - 1]
+                    const data = JSON.parse(lastLine)
                     resolve({ success: true, data })
                 } catch {
                     resolve({ success: true, data: stdout.trim() })
@@ -224,29 +241,41 @@ print(json.dumps({'success': success, 'message': message}))
     })
 
     // Iniciar sincronización
-    ipcMain.handle('gcp:startSync', async (_, localPath: string, bucketName: string) => {
+    ipcMain.handle('gcp:startSync', async (event, localPath: string, bucketName: string) => {
+        const log = (msg: string) => event.sender.send('gcp:log', msg)
+
         const code = `
 ${getAuthHeader()}
-import json, sys
+import json, sys, time
 sys.path.insert(0, '.')
-from file_watcher import RealTimeSync
-from google.cloud import storage
+# Mock RealTimeSync behavior for stability if file not found, or use real one
+try:
+    from file_watcher import RealTimeSync
+    from google.cloud import storage
+    
+    class GCPAdapter:
+        def __init__(self):
+            self.client = storage.Client()
+        def upload_file(self, bucket_name, file_path, object_name=None):
+            bucket = self.client.bucket(bucket_name)
+            blob = bucket.blob(object_name or file_path)
+            blob.upload_from_filename(file_path)
+            print(f"Uploaded: {file_path}") # This goes to stdout -> log
+            return True
 
-class GCPAdapter:
-    def __init__(self):
-        self.client = storage.Client()
-    def upload_file(self, bucket_name, file_path, object_name=None):
-        bucket = self.client.bucket(bucket_name)
-        blob = bucket.blob(object_name or file_path)
-        blob.upload_from_filename(file_path)
-        return True
-
-adapter = GCPAdapter()
-sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}')
-success, msg = sync.start()
-print(json.dumps({'success': success, 'message': msg}))
+    print("Initializing Sync...")
+    adapter = GCPAdapter()
+    sync = RealTimeSync(adapter, '${bucketName}', r'${localPath}')
+    # Note: If start() is blocking, this will keep running. 
+    # We should probably run this in a detached way for real background sync, 
+    # but for now we stream logs.
+    success, msg = sync.start()
+    print(json.dumps({'success': success, 'message': msg}))
+except Exception as e:
+    print(json.dumps({'success': False, 'message': str(e)}))
 `
-        return runPythonCode(code)
+        // Use runPythonCode with log callback
+        return runPythonCode(code, log)
     })
 
     // Diálogo para seleccionar carpeta
@@ -293,7 +322,7 @@ print(json.dumps({'success': success, 'message': msg}))
     })
 
     // Subir archivo individual
-    ipcMain.handle('gcp:uploadFile', async (_, bucketName: string, prefix: string = '') => {
+    ipcMain.handle('gcp:uploadFile', async (event, bucketName: string, prefix: string = '') => {
         const { dialog } = require('electron')
         const result = await dialog.showOpenDialog({ properties: ['openFile'] })
 
@@ -302,34 +331,42 @@ print(json.dumps({'success': success, 'message': msg}))
             const fileName = path.basename(localPath)
             const objectName = prefix ? `${prefix}/${fileName}` : fileName
 
+            // Log start
+            event.sender.send('gcp:log', `Iniciando subida de archivo: ${fileName}`)
+
             const code = `
 ${getAuthHeader()}
 import json
 from google.cloud import storage
 try:
+    print("Conectando a GCP...")
     client = storage.Client()
     bucket = client.bucket('${bucketName}')
     blob = bucket.blob('${objectName}')
+    print(f"Subiendo {r'${localPath}'}...")
     blob.upload_from_filename(r'${localPath}')
+    print("Subida completada.")
     print(json.dumps({'success': True}))
 except Exception as e:
+    print(f"Error: {str(e)}")
     print(json.dumps({'success': False, 'error': str(e)}))
 `
-            return runPythonCode(code)
+            return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
         }
         return { success: false, cancelled: true }
     })
 
     // Subir carpeta completa (Recursivo)
-    ipcMain.handle('gcp:uploadFolder', async (_, bucketName: string, prefix: string = '') => {
+    ipcMain.handle('gcp:uploadFolder', async (event, bucketName: string, prefix: string = '') => {
         const { dialog } = require('electron')
         const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
 
         if (!result.canceled && result.filePaths.length > 0) {
             const localPath = result.filePaths[0]
             const folderName = path.basename(localPath)
-            // Si hay prefix, subdir/nombreCarpeta. Si no, nombreCarpeta/
             const targetPrefix = prefix ? `${prefix}/${folderName}` : folderName
+
+            event.sender.send('gcp:log', `Iniciando subida de carpeta: ${folderName}`)
 
             const code = `
 ${getAuthHeader()}
@@ -338,32 +375,34 @@ from google.cloud import storage
 
 def upload_folder():
     try:
+        print("Conectando a GCP Storage...")
         client = storage.Client()
         bucket = client.bucket('${bucketName}')
         base_path = r'${localPath}'
-        base_name = os.path.basename(base_path)
         
         uploaded_count = 0
+        print(f"Escaneando carpeta: {base_path}")
         
         for root, dirs, files in os.walk(base_path):
             for file in files:
                 local_file = os.path.join(root, file)
-                # Calcular ruta relativa para mantener estructura
                 rel_path = os.path.relpath(local_file, base_path)
-                # Destino: prefix/folderName/rel_path
                 blob_name = f"${targetPrefix}/{rel_path}".replace("\\\\", "/")
                 
+                print(f"Subiendo: {rel_path} -> {blob_name}")
                 blob = bucket.blob(blob_name)
                 blob.upload_from_filename(local_file)
                 uploaded_count += 1
                 
+        print(f"Total subidos: {uploaded_count}")
         print(json.dumps({'success': True, 'count': uploaded_count}))
     except Exception as e:
+        print(f"Error crítico: {str(e)}")
         print(json.dumps({'success': False, 'error': str(e)}))
 
 upload_folder()
 `
-            return runPythonCode(code)
+            return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
         }
         return { success: false, cancelled: true }
     })

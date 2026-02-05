@@ -25,6 +25,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         uploadCredentials: () => ipcRenderer.invoke('gcp:uploadCredentials'),
         uploadFile: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:uploadFile', bucket, prefix),
         uploadFolder: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:uploadFolder', bucket, prefix),
+        onLog: (callback: (message: string) => void) => {
+            const subscription = (_: any, msg: string) => callback(msg)
+            ipcRenderer.on('gcp:log', subscription)
+            // Return cleanup function
+            return () => ipcRenderer.removeListener('gcp:log', subscription)
+        },
         loadSession: () => ipcRenderer.invoke('gcp:loadSession')
     }
 })

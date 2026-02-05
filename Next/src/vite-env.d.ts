@@ -28,8 +28,11 @@ declare global {
                 uploadCredentials: () => Promise<{ success: boolean; data?: string; error?: string }>
                 uploadFile: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
                 uploadFolder: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; count?: number; error?: string }>
+                onLog: (callback: (message: string) => void) => () => void
                 loadSession: () => Promise<{ success: boolean; data?: any }>
             }
         }
     }
 }
+
+```
