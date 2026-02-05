@@ -26,6 +26,8 @@ declare global {
                 startSync: (localPath: string, bucketName: string) => Promise<{ success: boolean; data: any; error?: string }>
                 openDirectory: () => Promise<{ success: boolean; data?: string }>
                 uploadCredentials: () => Promise<{ success: boolean; data?: string; error?: string }>
+                uploadFile: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; error?: string }>
+                uploadFolder: (bucket: string, prefix: string) => Promise<{ success: boolean; cancelled?: boolean; count?: number; error?: string }>
                 loadSession: () => Promise<{ success: boolean; data?: any }>
             }
         }

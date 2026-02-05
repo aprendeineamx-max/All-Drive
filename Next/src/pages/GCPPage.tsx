@@ -47,6 +47,7 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
     const [searchTerm, setSearchTerm] = useState('')
     const [viewType, setViewType] = useState<'list' | 'grid'>('list')
     const [currentPrefix, setCurrentPrefix] = useState('')
+    const [actionLoading, setActionLoading] = useState(false)
 
     useEffect(() => {
         loadObjects(bucket, currentPrefix)
@@ -67,50 +68,114 @@ function FileExplorer({ bucket, onClose, electronAPI }: { bucket: string, onClos
         }
     }
 
+    const handleUploadFile = async () => {
+        setActionLoading(true)
+        try {
+            const res = await electronAPI.gcp.uploadFile(bucket, currentPrefix)
+            if (res.success) await loadObjects(bucket, currentPrefix)
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const handleUploadFolder = async () => {
+        setActionLoading(true)
+        try {
+            const res = await electronAPI.gcp.uploadFolder(bucket, currentPrefix)
+            if (res.success) await loadObjects(bucket, currentPrefix)
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const handleStartSync = async () => {
+        try {
+            const dirRes = await electronAPI.gcp.openDirectory()
+            if (dirRes.success && dirRes.data) {
+                setActionLoading(true)
+                const syncRes = await electronAPI.gcp.startSync(dirRes.data, bucket)
+                if (syncRes.success) {
+                    alert(`Sincronización iniciada con: ${dirRes.data}`)
+                }
+            }
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
     const filteredObjects = objects.filter(obj =>
         obj.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     return (
         <div className="space-y-4 h-full flex flex-col">
-            <div className="flex items-center gap-4 mb-2">
-                <Button variant="ghost" onClick={onClose} size="sm">
-                    <ArrowLeft size={20} />
-                </Button>
-                <div>
-                    <h2 className="text-xl font-bold flex items-center gap-2">
-                        <Database className="text-indigo-400" size={20} />
-                        {bucket}
-                    </h2>
-                    <p className="text-xs text-white/50">{objects.length} archivos • {currentPrefix || 'Raíz'}</p>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                    <div className="relative w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={14} />
-                        <Input
-                            value={searchTerm}
-                            onChange={setSearchTerm}
-                            placeholder="Buscar archivos..."
-                            className="pl-9 h-9 text-sm"
-                        />
-                    </div>
-                    <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
-                        <button
-                            onClick={() => setViewType('list')}
-                            className={`p-1.5 rounded ${viewType === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
-                        >
-                            <ListIcon size={16} />
-                        </button>
-                        <button
-                            onClick={() => setViewType('grid')}
-                            className={`p-1.5 rounded ${viewType === 'grid' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
-                        >
-                            <Grid size={16} />
-                        </button>
-                    </div>
-                    <Button variant="secondary" size="sm" onClick={() => loadObjects(bucket, currentPrefix)} loading={loading}>
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            <div className="flex flex-col gap-4 mb-2">
+                {/* Header Top */}
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" onClick={onClose} size="sm">
+                        <ArrowLeft size={20} />
                     </Button>
+                    <div>
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <Database className="text-indigo-400" size={20} />
+                            {bucket}
+                        </h2>
+                        <p className="text-xs text-white/50">{objects.length} archivos • {currentPrefix || 'Raíz'}</p>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => loadObjects(bucket, currentPrefix)} loading={loading}>
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Toolbar */}
+                <div className="flex items-center gap-3 bg-white/5 p-2 rounded-lg border border-white/10">
+                    <Button size="sm" variant="secondary" onClick={handleUploadFile} disabled={actionLoading}>
+                        <UploadCloud size={16} className="mr-2" />
+                        Subir Archivo
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={handleUploadFolder} disabled={actionLoading}>
+                        <Folder size={16} className="mr-2" />
+                        Subir Carpeta
+                    </Button>
+                    <div className="h-6 w-px bg-white/20 mx-1" />
+                    <Button size="sm" variant="ghost" onClick={handleStartSync} disabled={actionLoading} className="text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/20">
+                        <RefreshCw size={16} className="mr-2" />
+                        Sincronizar Carpeta Local
+                    </Button>
+
+                    <div className="ml-auto flex items-center gap-2">
+                        <div className="relative w-64">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={14} />
+                            <Input
+                                value={searchTerm}
+                                onChange={setSearchTerm}
+                                placeholder="Buscar archivos..."
+                                className="pl-9 h-9 text-sm border-0 bg-black/20 focus:bg-black/40"
+                            />
+                        </div>
+                        <div className="flex bg-black/20 rounded-lg p-1">
+                            <button
+                                onClick={() => setViewType('list')}
+                                className={`p-1.5 rounded ${viewType === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                            >
+                                <ListIcon size={16} />
+                            </button>
+                            <button
+                                onClick={() => setViewType('grid')}
+                                className={`p-1.5 rounded ${viewType === 'grid' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                            >
+                                <Grid size={16} />
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

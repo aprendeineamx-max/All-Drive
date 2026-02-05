@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         startSync: (localPath: string, bucketName: string) => ipcRenderer.invoke('gcp:startSync', localPath, bucketName),
         openDirectory: () => ipcRenderer.invoke('gcp:openDirectory'),
         uploadCredentials: () => ipcRenderer.invoke('gcp:uploadCredentials'),
+        uploadFile: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:uploadFile', bucket, prefix),
+        uploadFolder: (bucket: string, prefix: string) => ipcRenderer.invoke('gcp:uploadFolder', bucket, prefix),
         loadSession: () => ipcRenderer.invoke('gcp:loadSession')
     }
 })

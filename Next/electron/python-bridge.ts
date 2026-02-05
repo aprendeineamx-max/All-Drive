@@ -292,6 +292,82 @@ print(json.dumps({'success': success, 'message': msg}))
         return { success: false }
     })
 
+    // Subir archivo individual
+    ipcMain.handle('gcp:uploadFile', async (_, bucketName: string, prefix: string = '') => {
+        const { dialog } = require('electron')
+        const result = await dialog.showOpenDialog({ properties: ['openFile'] })
+
+        if (!result.canceled && result.filePaths.length > 0) {
+            const localPath = result.filePaths[0]
+            const fileName = path.basename(localPath)
+            const objectName = prefix ? `${prefix}/${fileName}` : fileName
+
+            const code = `
+${getAuthHeader()}
+import json
+from google.cloud import storage
+try:
+    client = storage.Client()
+    bucket = client.bucket('${bucketName}')
+    blob = bucket.blob('${objectName}')
+    blob.upload_from_filename(r'${localPath}')
+    print(json.dumps({'success': True}))
+except Exception as e:
+    print(json.dumps({'success': False, 'error': str(e)}))
+`
+            return runPythonCode(code)
+        }
+        return { success: false, cancelled: true }
+    })
+
+    // Subir carpeta completa (Recursivo)
+    ipcMain.handle('gcp:uploadFolder', async (_, bucketName: string, prefix: string = '') => {
+        const { dialog } = require('electron')
+        const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+
+        if (!result.canceled && result.filePaths.length > 0) {
+            const localPath = result.filePaths[0]
+            const folderName = path.basename(localPath)
+            // Si hay prefix, subdir/nombreCarpeta. Si no, nombreCarpeta/
+            const targetPrefix = prefix ? `${prefix}/${folderName}` : folderName
+
+            const code = `
+${getAuthHeader()}
+import json, os
+from google.cloud import storage
+
+def upload_folder():
+    try:
+        client = storage.Client()
+        bucket = client.bucket('${bucketName}')
+        base_path = r'${localPath}'
+        base_name = os.path.basename(base_path)
+        
+        uploaded_count = 0
+        
+        for root, dirs, files in os.walk(base_path):
+            for file in files:
+                local_file = os.path.join(root, file)
+                # Calcular ruta relativa para mantener estructura
+                rel_path = os.path.relpath(local_file, base_path)
+                # Destino: prefix/folderName/rel_path
+                blob_name = f"${targetPrefix}/{rel_path}".replace("\\\\", "/")
+                
+                blob = bucket.blob(blob_name)
+                blob.upload_from_filename(local_file)
+                uploaded_count += 1
+                
+        print(json.dumps({'success': True, 'count': uploaded_count}))
+    except Exception as e:
+        print(json.dumps({'success': False, 'error': str(e)}))
+
+upload_folder()
+`
+            return runPythonCode(code)
+        }
+        return { success: false, cancelled: true }
+    })
+
     // Gestión de Sesión
     const sessionPath = path.join(app.getPath('userData'), 'gcp_session.json')
     const fs = require('fs')
