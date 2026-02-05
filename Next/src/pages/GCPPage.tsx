@@ -76,13 +76,17 @@ function FileExplorer({
     onClose,
     electronAPI,
     onToast,
-    syncStatuses
+    syncStatuses,
+    lastSyncPath,
+    setLastSyncPath
 }: {
     bucket: string,
     onClose: () => void,
     electronAPI: any,
     onToast: (msg: string, type: 'success' | 'error' | 'info') => void,
-    syncStatuses: Record<string, SyncStatus>
+    syncStatuses: Record<string, SyncStatus>,
+    lastSyncPath: string | null,
+    setLastSyncPath: (path: string | null) => void
 }) {
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
@@ -90,7 +94,10 @@ function FileExplorer({
     const [viewType, setViewType] = useState<'list' | 'grid'>('list')
     const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
-    const [lastSyncPath, setLastSyncPath] = useState<string | null>(null)
+
+    useEffect(() => {
+        loadObjects(bucket, currentPrefix)
+    }, [bucket, currentPrefix])
 
     useEffect(() => {
         loadObjects(bucket, currentPrefix)
@@ -99,30 +106,61 @@ function FileExplorer({
     const loadObjects = async (bucketName: string, prefix: string) => {
         setLoading(true)
         try {
-            const result = await electronAPI?.gcp.listObjects(bucketName, prefix)
-            const gcsFiles = result?.success ? result.data : []
+            // STRATEGY: Local-First (Google Drive Desktop Style)
+            // 1. Get GCS Objects for status reference
+            const gcsResult = await electronAPI?.gcp.listObjects(bucketName, prefix)
+            const gcsFiles: GCSObject[] = gcsResult?.success ? gcsResult.data : []
+            const gcsMap = new Map(gcsFiles.map(f => [f.name, f]))
 
-            // Si hay un path de sync activo, listar local para el merge
-            let merged = [...gcsFiles]
-            if (lastSyncPath) {
+            let finalFiles: any[] = []
+
+            // 2. Identify if we are in the Synced Folder Root
+            // If prefix matches the relative path inside sync, we list local files.
+            // For now, assuming Root (prefix '') matches Desktop Root.
+            if (lastSyncPath && !prefix) {
                 const localRes = await electronAPI.gcp.listLocalFolder(lastSyncPath)
                 if (localRes.success) {
                     const localItems = localRes.data || []
 
-                    // Mezclar archivos locales que NO están en la nube aún (basado en nombre)
-                    const gcsNames = new Set(gcsFiles.map((o: any) => o.name))
-                    localItems.forEach((lf: any) => {
-                        if (!gcsNames.has(lf.name)) {
-                            merged.push({
-                                ...lf,
-                                contentType: 'local-pending'
+                    finalFiles = localItems.map((local: any) => {
+                        // Check if exists in Cloud
+                        const isSynced = gcsMap.has(local.name)
+
+                        // Update SyncStatus state implicitly
+                        if (isSynced) {
+                            // Side-effect: Ensure status is synced in visual state if not overlapping 'uploading'
+                            // We don't call setSyncStatuses here to avoid render loops, but we use this info for the ITEM.
+                        }
+
+                        return {
+                            ...local,
+                            // If it's a directory, local scan says so.
+                            contentType: local.contentType || (local.name.includes('.') ? 'application/octet-stream' : 'directory'),
+                            // Mark as synced if found in GCS
+                            syncState: isSynced ? 'synced' : 'pending'
+                        }
+                    })
+
+                    // Add GCS-only files (Cloud Only)
+                    gcsFiles.forEach(gcs => {
+                        if (!finalFiles.find(f => f.name === gcs.name)) {
+                            finalFiles.push({
+                                ...gcs,
+                                isLocal: false,
+                                syncState: 'synced' // Cloud only is securely 'synced'/available
                             })
                         }
                     })
+                } else {
+                    // Fallback to pure GCS if local fails
+                    finalFiles = gcsFiles
                 }
+            } else {
+                // Standard Cloud View (Subfolders or Non-Synced Buckets)
+                finalFiles = gcsFiles
             }
 
-            setObjects(merged)
+            setObjects(finalFiles)
         } catch (e) {
             console.error(e)
             onToast('Error al cargar objetos', 'error')
@@ -176,6 +214,9 @@ function FileExplorer({
                 const syncRes = await electronAPI.gcp.startSync(dirRes.data, bucket)
                 if (syncRes.success) {
                     setLastSyncPath(dirRes.data)
+                    // Persist Sync Path
+                    window.electronAPI.gcp.saveSession({ lastSyncPath: dirRes.data })
+
                     onToast(`Sincronización activa: ${dirRes.data}`, 'success')
                     setTimeout(() => loadObjects(bucket, currentPrefix), 1000)
                 } else {
@@ -257,6 +298,18 @@ function FileExplorer({
                         </div>
                     </div>
                 </div>
+
+                {/* Active Sync Indicator (Google Drive Style) */}
+                {lastSyncPath && (
+                    <div className="bg-indigo-500/10 border border-indigo-500/20 px-4 py-2 rounded-lg flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                            <span className="text-xs text-indigo-200">
+                                Sincronizando: <span className="font-mono text-white/60">{lastSyncPath}</span>
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <GlassCard className="flex-1 overflow-hidden p-0 border-0 bg-black/20">
@@ -286,9 +339,13 @@ function FileExplorer({
                                         <tr key={i} className="hover:bg-white/5 group transition-colors">
                                             <td className="px-4 py-3 flex items-center gap-3 text-white/80 group-hover:text-white">
                                                 <div className="relative">
-                                                    <FileText size={16} className="text-indigo-400" />
+                                                    {obj.contentType === 'directory' ? (
+                                                        <Folder size={16} className="text-yellow-500" />
+                                                    ) : (
+                                                        <FileText size={16} className="text-indigo-400" />
+                                                    )}
                                                     <div className="absolute -bottom-1 -right-1">
-                                                        <StatusIcon status={syncStatuses[obj.name]} />
+                                                        <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
                                                     </div>
                                                 </div>
                                                 <span className="truncate max-w-[300px]">{obj.name}</span>
@@ -312,9 +369,9 @@ function FileExplorer({
                                         className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
                                     >
                                         <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
-                                            <FileText size={24} />
+                                            {obj.contentType === 'directory' ? <Folder size={24} className="text-yellow-500" /> : <FileText size={24} />}
                                             <div className="absolute top-0 right-0 p-1">
-                                                <StatusIcon status={syncStatuses[obj.name]} />
+                                                <StatusIcon status={syncStatuses[obj.name] || (obj as any).syncState} />
                                             </div>
                                         </div>
                                         <div className="min-w-0 w-full">
@@ -506,6 +563,7 @@ export default function GCPPage() {
     const [showLogs, setShowLogs] = useState(false)
     const [isTerminalMinimized, setIsTerminalMinimized] = useState(false)
     const [syncStatuses, setSyncStatuses] = useState<Record<string, SyncStatus>>({})
+    const [lastSyncPath, setLastSyncPath] = useState<string | null>(null)
 
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Math.random().toString(36).substr(2, 9)
@@ -545,10 +603,19 @@ export default function GCPPage() {
     const checkSession = async () => {
         try {
             const result = await window.electronAPI?.gcp.loadSession()
-            if (result?.success && result.data.lastCredentialPath) {
-                console.log('Restoring session:', result.data.lastCredentialPath)
-                setSelectedCred(result.data.lastCredentialPath)
-                handleAuthenticate(result.data.lastCredentialPath)
+            if (result?.success) {
+                const session = result.data
+                if (session.lastCredentialPath) {
+                    console.log('Restoring auth:', session.lastCredentialPath)
+                    setSelectedCred(session.lastCredentialPath)
+                    handleAuthenticate(session.lastCredentialPath)
+                }
+                if (session.lastSyncPath) {
+                    console.log('Restoring sync path:', session.lastSyncPath)
+                    setLastSyncPath(session.lastSyncPath)
+                    // Note: We don't auto-start sync here to avoid issues, but UI will reflect the path state
+                    // and allow "Merged View" to work immediately
+                }
             }
         } catch (e) {
             console.error('Session restore failed', e)
@@ -702,6 +769,8 @@ export default function GCPPage() {
                             electronAPI={window.electronAPI}
                             onToast={showToast}
                             syncStatuses={syncStatuses}
+                            lastSyncPath={lastSyncPath}
+                            setLastSyncPath={setLastSyncPath}
                         />
                     </motion.div>
                 </AnimatePresence>

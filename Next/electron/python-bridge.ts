@@ -358,14 +358,15 @@ try:
         result = []
         for f in files:
             full = os.path.join(path, f)
-            if os.path.isfile(full):
-                stat = os.stat(full)
-                result.append({
-                    'name': f,
-                    'size': stat.st_size,
-                    'updated': None,
-                    'isLocal': True
-                })
+            stat = os.stat(full)
+            is_dir = os.path.isdir(full)
+            result.append({
+                'name': f,
+                'size': stat.st_size,
+                'updated': stat.st_mtime,
+                'contentType': 'directory' if is_dir else 'application/octet-stream',
+                'isLocal': True
+            })
         print(json.dumps(result))
 except Exception as e:
     print(json.dumps([]))
@@ -373,7 +374,7 @@ except Exception as e:
         return runPythonCode(code)
     })
 
-    // Iniciar sincronización (Optimizado para rutas relativas)
+    // Iniciar sincronización (Optimizado para rutas relativas y slash normalization)
     ipcMain.handle('gcp:startSync', async (event, localPath: string, bucketName: string) => {
         const log = (msg: string) => event.sender.send('gcp:log', msg)
         const onEvent = (evt: any) => event.sender.send('gcp:sync_event', evt)
@@ -385,8 +386,8 @@ sys.path.insert(0, '.')
 
 def log_event(file, status, message=""):
     print(json.dumps({
-        "type": "sync_event", 
-        "file": os.path.basename(file), 
+        "type": "sync_event",
+        "file": os.path.basename(file),
         "full_path": file,
         "status": status,
         "message": message
@@ -396,20 +397,25 @@ def log_event(file, status, message=""):
 try:
     from file_watcher import RealTimeSync
     from google.cloud import storage
-    
+
     class GCPAdapter:
         def __init__(self, root_path):
             self.client = storage.Client()
             self.root_path = root_path
-            
+
         def upload_file(self, bucket_name, file_path, object_name=None):
-            # Normalize path: ensure it's relative to root_path for the bucket
-            rel_path = os.path.relpath(file_path, self.root_path).replace("\\\\", "/")
-            log_event(file_path, "uploading")
+            # Normalize path: ensure it's relative to root_path and uses Forward Slashes for GCS
             try:
+                rel_path = os.path.relpath(file_path, self.root_path)
+                # FORCE FORWARD SLASHES for GCS object names
+                blob_name = rel_path.replace(os.sep, '/')
+
+                log_event(file_path, "uploading")
+
                 bucket = self.client.bucket(bucket_name)
-                blob = bucket.blob(rel_path)
+                blob = bucket.blob(blob_name)
                 blob.upload_from_filename(file_path)
+
                 log_event(file_path, "synced")
                 return True
             except Exception as e:
@@ -589,16 +595,36 @@ upload_folder()
         try {
             if (fs.existsSync(sessionPath)) {
                 const session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
+                // Restaurar credencial si existe
                 if (session.lastCredentialPath) {
-                    // Restaurar autenticación automáticamente
                     activeCredentialPath = session.lastCredentialPath
-                    return { success: true, data: session }
                 }
+                return { success: true, data: session }
             }
         } catch (e) {
             console.error('Error loading session:', e)
         }
         return { success: false }
+    })
+
+    ipcMain.handle('gcp:saveSession', async (_, data: any) => {
+        try {
+            let session = {}
+            if (fs.existsSync(sessionPath)) {
+                session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
+            }
+            const newSession = { ...session, ...data }
+            fs.writeFileSync(sessionPath, JSON.stringify(newSession))
+
+            // Update active credential if passed
+            if (data.lastCredentialPath) {
+                activeCredentialPath = data.lastCredentialPath
+            }
+
+            return { success: true }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
     })
 }
 
