@@ -152,12 +152,39 @@ function FileExplorer({
 
             let finalFiles: any[] = []
 
-            // 2. Identify if we are in the Synced Folder Root or a Subfolder
-            // List local files from the full path (syncPath + currentLocalPath)
+            // 2. Identify if we are in the Virtual Root or a Synced Folder
             if (lastSyncPath) {
-                const fullLocalPath = currentLocalPath
-                    ? `${lastSyncPath}/${currentLocalPath}`.replace(/\\/g, '/')
+                const rootName = lastSyncPath.split(/[/\\]/).pop() || 'Desktop'
+
+                if (currentLocalPath === '') {
+                    // VIRTUAL ROOT: Show the Synced Folder(s) as items
+                    finalFiles = [{
+                        name: rootName,
+                        contentType: 'directory',
+                        size: 0,
+                        updated: new Date().toISOString(),
+                        syncState: 'synced'
+                    }]
+                    setObjects(finalFiles)
+                    setLoading(false)
+                    return
+                }
+
+                // Calculate real local path relative to the synced folder
+                let relativePath = ''
+                if (currentLocalPath === rootName) {
+                    relativePath = ''
+                } else if (currentLocalPath.startsWith(rootName + '/')) {
+                    relativePath = currentLocalPath.substring(rootName.length + 1)
+                } else {
+                    // Fallback for unexpected paths
+                    relativePath = currentLocalPath
+                }
+
+                const fullLocalPath = relativePath
+                    ? `${lastSyncPath}/${relativePath}`.replace(/\\/g, '/')
                     : lastSyncPath
+
                 const localRes = await electronAPI.gcp.listLocalFolder(fullLocalPath)
                 if (localRes.success) {
                     const localItems = localRes.data || []
@@ -360,7 +387,7 @@ function FileExplorer({
                             className="cursor-pointer hover:text-white"
                             onClick={() => setCurrentLocalPath('')}
                         >
-                            {lastSyncPath.split(/[/\\]/).pop()}
+                            Raíz
                         </span>
                         {currentLocalPath && currentLocalPath.split(/[/\\]/).filter(Boolean).map((seg, i, arr) => (
                             <React.Fragment key={i}>
