@@ -97,17 +97,12 @@ function FileExplorer({
     const [actionLoading, setActionLoading] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
     const [previewFile, setPreviewFile] = useState<{ name: string, content: string } | null>(null)
+    const [currentLocalPath, setCurrentLocalPath] = useState<string>('')  // Relative path within sync folder
 
+    // Auto-refresh when sync path or subfolder changes (Local-First trigger)
     useEffect(() => {
         loadObjects(bucket, currentPrefix)
-    }, [bucket, currentPrefix])
-
-    // Auto-refresh when sync path is set/changed (Local-First trigger)
-    useEffect(() => {
-        if (lastSyncPath) {
-            loadObjects(bucket, currentPrefix)
-        }
-    }, [lastSyncPath])
+    }, [bucket, currentPrefix, lastSyncPath, currentLocalPath])
 
     const loadObjects = async (bucketName: string, prefix: string) => {
         setLoading(true)
@@ -120,11 +115,13 @@ function FileExplorer({
 
             let finalFiles: any[] = []
 
-            // 2. Identify if we are in the Synced Folder Root
-            // If prefix matches the relative path inside sync, we list local files.
-            // For now, assuming Root (prefix '') matches Desktop Root.
-            if (lastSyncPath && !prefix) {
-                const localRes = await electronAPI.gcp.listLocalFolder(lastSyncPath)
+            // 2. Identify if we are in the Synced Folder Root or a Subfolder
+            // List local files from the full path (syncPath + currentLocalPath)
+            if (lastSyncPath) {
+                const fullLocalPath = currentLocalPath
+                    ? `${lastSyncPath}/${currentLocalPath}`.replace(/\\/g, '/')
+                    : lastSyncPath
+                const localRes = await electronAPI.gcp.listLocalFolder(fullLocalPath)
                 if (localRes.success) {
                     const localItems = localRes.data || []
 
@@ -281,6 +278,17 @@ function FileExplorer({
         setActionLoading(false)
     }
 
+    const handleFileClick = (obj: any) => {
+        if (obj.contentType === 'directory') {
+            const newPath = currentLocalPath
+                ? `${currentLocalPath}/${obj.name}`.replace(/\/+/g, '/')
+                : obj.name
+            setCurrentLocalPath(newPath)
+        } else {
+            handlePreview(obj.name)
+        }
+    }
+
     const filteredObjects = objects.filter(obj =>
         obj.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
@@ -306,6 +314,30 @@ function FileExplorer({
                         </Button>
                     </div>
                 </div>
+
+                {/* Breadcrumb Path Bar */}
+                {lastSyncPath && (
+                    <div className="flex items-center gap-1 bg-black/30 px-3 py-2 rounded-lg border border-white/10 text-sm text-white/70 overflow-x-auto">
+                        <HardDrive size={14} className="text-indigo-400 flex-shrink-0" />
+                        <span
+                            className="cursor-pointer hover:text-white"
+                            onClick={() => setCurrentLocalPath('')}
+                        >
+                            {lastSyncPath.split(/[/\\]/).pop()}
+                        </span>
+                        {currentLocalPath && currentLocalPath.split(/[/\\]/).filter(Boolean).map((seg, i, arr) => (
+                            <React.Fragment key={i}>
+                                <ChevronRight size={12} className="text-white/30" />
+                                <span
+                                    className="cursor-pointer hover:text-white"
+                                    onClick={() => setCurrentLocalPath(arr.slice(0, i + 1).join('/'))}
+                                >
+                                    {seg}
+                                </span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
 
                 {/* Toolbar */}
                 <div className="flex items-center gap-3 bg-white/5 p-2 rounded-lg border border-white/10">
@@ -428,7 +460,7 @@ function FileExplorer({
                                                     <span
                                                         className="truncate max-w-[300px] cursor-pointer hover:text-indigo-300 hover:underline"
                                                         title={obj.name}
-                                                        onClick={() => handlePreview(obj.name)}
+                                                        onClick={() => handleFileClick(obj)}
                                                     >
                                                         {obj.name.split(/[/\\]/).pop()}
                                                     </span>
@@ -450,6 +482,7 @@ function FileExplorer({
                                     <motion.div
                                         key={i}
                                         whileHover={{ scale: 1.02 }}
+                                        onClick={() => handleFileClick(obj)}
                                         className="p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all flex flex-col items-center gap-3 text-center cursor-pointer group"
                                     >
                                         <div className="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center text-indigo-400 group-hover:text-white group-hover:bg-indigo-500 transition-all relative">
@@ -500,7 +533,7 @@ function FileExplorer({
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     )
 }
 
