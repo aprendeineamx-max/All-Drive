@@ -92,7 +92,8 @@ function FileExplorer({
     const [objects, setObjects] = useState<GCSObject[]>([])
     const [loading, setLoading] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
-    const [viewType, setViewType] = useState<'list' | 'grid'>('list')
+    const [viewType, setViewType] = useState<'list' | 'grid' | 'details'>('list')
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' })
     const [currentPrefix] = useState('')
     const [actionLoading, setActionLoading] = useState(false)
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
@@ -353,7 +354,58 @@ function FileExplorer({
         }
     }
 
-    const filteredObjects = objects.filter(obj =>
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc'
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc'
+        }
+        setSortConfig({ key, direction })
+    }
+
+    const formatSize = (bytes: number) => {
+        if (bytes === 0) return '0 B'
+        const k = 1024
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+        const i = Math.floor(Math.log(bytes) / Math.log(k))
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    }
+
+    const formatDate = (dateStr: string | null) => {
+        if (!dateStr) return '-'
+        return new Date(dateStr).toLocaleString([], {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    const getFileType = (obj: GCSObject) => {
+        if (obj.contentType === 'directory') return 'Carpeta de archivos'
+        const ext = obj.name.split('.').pop()?.toUpperCase()
+        return ext ? `Archivo ${ext}` : 'Archivo'
+    }
+
+    const sortedObjects = [...objects].sort((a, b) => {
+        if (!sortConfig) return 0
+        const { key, direction } = sortConfig
+
+        let aValue: any = a[key as keyof GCSObject]
+        let bValue: any = b[key as keyof GCSObject]
+
+        // Special case for names to ignore case and path prefix
+        if (key === 'name') {
+            aValue = a.name.split(/[/\\]/).pop()?.toLowerCase() || ''
+            bValue = b.name.split(/[/\\]/).pop()?.toLowerCase() || ''
+        }
+
+        if (aValue < bValue) return direction === 'asc' ? -1 : 1
+        if (aValue > bValue) return direction === 'asc' ? 1 : -1
+        return 0
+    })
+
+    const filteredObjects = sortedObjects.filter(obj =>
         obj.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
@@ -440,16 +492,25 @@ function FileExplorer({
                                 className="pl-9 h-9 text-sm border-0 bg-black/20 focus:bg-black/40"
                             />
                         </div>
-                        <div className="flex bg-black/20 rounded-lg p-1">
+                        <div className="flex bg-black/20 rounded-lg p-1 gap-1">
                             <button
                                 onClick={() => setViewType('list')}
-                                className={`p-1.5 rounded ${viewType === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                                className={`p-1.5 rounded transition-all ${viewType === 'list' ? 'bg-indigo-500/30 text-indigo-300' : 'text-white/40 hover:text-white/70 hover:bg-white/5'}`}
+                                title="Lista"
                             >
                                 <ListIcon size={16} />
                             </button>
                             <button
+                                onClick={() => setViewType('details')}
+                                className={`p-1.5 rounded transition-all ${viewType === 'details' ? 'bg-indigo-500/30 text-indigo-300' : 'text-white/40 hover:text-white/70 hover:bg-white/5'}`}
+                                title="Detalles"
+                            >
+                                <FileText size={16} />
+                            </button>
+                            <button
                                 onClick={() => setViewType('grid')}
-                                className={`p-1.5 rounded ${viewType === 'grid' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'}`}
+                                className={`p-1.5 rounded transition-all ${viewType === 'grid' ? 'bg-indigo-500/30 text-indigo-300' : 'text-white/40 hover:text-white/70 hover:bg-white/5'}`}
+                                title="Cuadrícula"
                             >
                                 <Grid size={16} />
                             </button>

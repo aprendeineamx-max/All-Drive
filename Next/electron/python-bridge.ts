@@ -352,7 +352,7 @@ print(json.dumps({'success': success, 'message': message}))
     // Listar contenido de carpeta local (para merge de vista)
     ipcMain.handle('gcp:listLocalFolder', async (_, localPath: string) => {
         const code = `
-import os, json
+import os, json, datetime
 try:
     path = r'${localPath}'
     if not os.path.exists(path):
@@ -364,10 +364,16 @@ try:
             full = os.path.join(path, f)
             stat = os.stat(full)
             is_dir = os.path.isdir(full)
+            
+            # Formatear fecha para el frontend
+            dt = datetime.datetime.fromtimestamp(stat.st_mtime)
+            updated_iso = dt.isoformat()
+            
+            # Devolver objeto enriquecido
             result.append({
                 'name': f,
                 'size': stat.st_size,
-                'updated': stat.st_mtime,
+                'updated': updated_iso,
                 'contentType': 'directory' if is_dir else 'application/octet-stream',
                 'isLocal': True
             })
