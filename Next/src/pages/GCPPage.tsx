@@ -151,7 +151,6 @@ function FileExplorer({
             // 1. Get GCS Objects for status reference
             const gcsResult = await electronAPI?.gcp.listObjects(bucketName, prefix)
             const gcsFiles: GCSObject[] = gcsResult?.success ? gcsResult.data : []
-            const gcsMap = new Map(gcsFiles.map(f => [f.name, f]))
 
             let finalFiles: any[] = []
 
@@ -160,7 +159,7 @@ function FileExplorer({
                 const rootName = lastSyncPath.split(/[/\\]/).pop() || 'Desktop'
 
                 if (currentLocalPath === '') {
-                    // VIRTUAL ROOT: Show the Synced Folder(s) as items
+                    // VIRTUAL ROOT: Show the Synced Folder(s) PLUS anything else in the bucket root
                     finalFiles = [{
                         name: rootName,
                         contentType: 'directory',
@@ -168,65 +167,80 @@ function FileExplorer({
                         updated: new Date().toISOString(),
                         syncState: 'synced'
                     }]
-                    setObjects(finalFiles)
-                    setLoading(false)
-                    return
-                }
 
-                // Calculate real local path relative to the synced folder
-                let relativePath = ''
-                if (currentLocalPath === rootName) {
-                    relativePath = ''
-                } else if (currentLocalPath.startsWith(rootName + '/')) {
-                    relativePath = currentLocalPath.substring(rootName.length + 1)
-                } else {
-                    // Fallback for unexpected paths
-                    relativePath = currentLocalPath
-                }
-
-                const fullLocalPath = relativePath
-                    ? `${lastSyncPath}/${relativePath}`.replace(/\\/g, '/')
-                    : lastSyncPath
-
-                const localRes = await electronAPI.gcp.listLocalFolder(fullLocalPath)
-                if (localRes.success) {
-                    const localItems = localRes.data || []
-
-                    finalFiles = localItems.map((local: any) => {
-                        // Check if exists in Cloud
-                        const isSynced = gcsMap.has(local.name)
-
-                        // Update SyncStatus state implicitly
-                        if (isSynced) {
-                            // Side-effect: Ensure status is synced in visual state if not overlapping 'uploading'
-                            // We don't call setSyncStatuses here to avoid render loops, but we use this info for the ITEM.
-                        }
-
-                        return {
-                            ...local,
-                            // If it's a directory, local scan says so.
-                            contentType: local.contentType || (local.name.includes('.') ? 'application/octet-stream' : 'directory'),
-                            // Mark as synced if found in GCS
-                            syncState: isSynced ? 'synced' : 'pending'
-                        }
-                    })
-
-                    // Add GCS-only files (Cloud Only)
+                    // Add GCS files/folders that are NOT under the rootName prefix
                     gcsFiles.forEach(gcs => {
-                        if (!finalFiles.find(f => f.name === gcs.name)) {
+                        // Strip trailing slash for comparison and display
+                        const cleanGcsName = gcs.name.replace(/\/$/, '')
+                        const baseName = cleanGcsName.split('/')[0]
+
+                        if (baseName !== rootName && !finalFiles.find(f => f.name === baseName)) {
                             finalFiles.push({
                                 ...gcs,
+                                name: baseName, // Use the top-level name
                                 isLocal: false,
-                                syncState: 'synced' // Cloud only is securely 'synced'/available
+                                syncState: 'synced'
                             })
                         }
                     })
                 } else {
-                    // Fallback to pure GCS if local fails
-                    finalFiles = gcsFiles
+                    // INSIDE A FOLDER (Sync or not)
+                    // Calculate real local path relative to the synced folder
+                    let relativePath = ''
+                    if (currentLocalPath === rootName) {
+                        relativePath = ''
+                    } else if (currentLocalPath.startsWith(rootName + '/')) {
+                        relativePath = currentLocalPath.substring(rootName.length + 1)
+                    } else {
+                        relativePath = currentLocalPath
+                    }
+
+                    const fullLocalPath = relativePath
+                        ? `${lastSyncPath}/${relativePath}`.replace(/\\/g, '/')
+                        : lastSyncPath
+
+                    const localRes = await electronAPI.gcp.listLocalFolder(fullLocalPath)
+                    const localItems = localRes?.success ? localRes.data : []
+
+                    // Merge strategy
+                    finalFiles = localItems.map((local: any) => {
+                        // Match with GCS using full path
+                        const gcsPath = relativePath ? `${relativePath}/${local.name}` : local.name
+                        const gcsMatch = gcsFiles.find(g => {
+                            const cleanG = g.name.replace(/\/$/, '')
+                            return cleanG === gcsPath || cleanG === rootName + '/' + gcsPath
+                        })
+
+                        return {
+                            ...local,
+                            contentType: local.contentType || 'application/octet-stream',
+                            syncState: gcsMatch ? 'synced' : 'pending'
+                        }
+                    })
+
+                    // Add Cloud Only files/folders at this LEVEL
+                    gcsFiles.forEach(gcs => {
+                        const cleanG = gcs.name.replace(/\/$/, '')
+                        const parts = cleanG.split('/')
+                        const gcsName = parts.pop() || cleanG
+                        const gcsPrefix = parts.join('/')
+
+                        // Check if this item belongs to the CURRENT prefix
+                        const currentPrefix = relativePath ? `${rootName}/${relativePath}` : rootName
+                        const matchesCurrentLevel = gcsPrefix === currentPrefix || (relativePath === '' && gcsPrefix === rootName)
+
+                        if (matchesCurrentLevel && gcsName && !finalFiles.find(f => f.name === gcsName)) {
+                            finalFiles.push({
+                                ...gcs,
+                                name: gcsName,
+                                isLocal: false,
+                                syncState: 'synced'
+                            })
+                        }
+                    })
                 }
             } else {
-                // Standard Cloud View (Subfolders or Non-Synced Buckets)
+                // Standard Cloud View (No local sync setup)
                 finalFiles = gcsFiles
             }
 

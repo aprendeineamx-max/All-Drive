@@ -306,17 +306,30 @@ from google.cloud import storage
 try:
     client = storage.Client()
     bucket = client.bucket('${bucketName}')
-    blobs = list(bucket.list_blobs(prefix='${prefix}', delimiter='/'))
+    iterator = bucket.list_blobs(prefix='${prefix}', delimiter='/')
+    blobs = list(iterator)
     objects = []
+    
+    # Agregar Archivos
     for blob in blobs:
         objects.append({
             'name': blob.name,
             'size': blob.size,
             'updated': blob.updated.isoformat() if blob.updated else None,
-            'content_type': blob.content_type
+            'contentType': blob.content_type
         })
+    
+    # Agregar Carpetas (prefixes)
+    for p in iterator.prefixes:
+        objects.append({
+            'name': p,
+            'size': 0,
+            'updated': None,
+            'contentType': 'directory'
+        })
+        
     print(json.dumps(objects))
-except:
+except Exception as e:
     print(json.dumps([]))
 `
         return runPythonCode(code)
