@@ -96,24 +96,6 @@ function App() {
                         </nav>
                     </div>
 
-                    {/* Sidebar Footer - Storage Status */}
-                    <div className="p-4 border-t border-white/5">
-                        <div className="glass-card">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Cloud className="w-4 h-4 text-accent-400" />
-                                <span className="text-sm text-white/80">Almacenamiento</span>
-                            </div>
-                            <div className="h-2 bg-dark-800 rounded-full overflow-hidden">
-                                <motion.div
-                                    initial={{ width: 0 }}
-                                    animate={{ width: '35%' }}
-                                    transition={{ duration: 1, ease: 'easeOut' }}
-                                    className="h-full bg-gradient-to-r from-accent-500 to-accent-400 rounded-full"
-                                />
-                            </div>
-                            <p className="text-xs text-white/50 mt-1">3.5 GB de 10 GB usados</p>
-                        </div>
-                    </div>
                 </aside>
 
                 {/* Main Content */}
