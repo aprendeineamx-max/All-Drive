@@ -771,6 +771,7 @@ export default function GCPPage() {
     const [isTerminalMinimized, setIsTerminalMinimized] = useState(false)
     const [syncStatuses, setSyncStatuses] = useState<Record<string, SyncStatus>>({})
     const [lastSyncPath, setLastSyncPath] = useState<string | null>(null)
+    const [isFooterVisible, setIsFooterVisible] = useState(true)
 
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Math.random().toString(36).substr(2, 9)
@@ -998,15 +999,39 @@ export default function GCPPage() {
                 </div>
 
                 {/* Sync Footer & Status Bar */}
-                <SyncFooter
-                    lastSyncPath={lastSyncPath}
-                    logsCount={logs.length}
-                    uploadingCount={Object.values(syncStatuses).filter(s => s === 'uploading').length}
-                    showLogs={showLogs}
-                    setShowLogs={setShowLogs}
-                    isMinimized={isTerminalMinimized}
-                    setIsMinimized={setIsTerminalMinimized}
-                />
+                <AnimatePresence>
+                    {isFooterVisible ? (
+                        <motion.div
+                            initial={{ y: 50 }}
+                            animate={{ y: 0 }}
+                            exit={{ y: 50 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="fixed bottom-0 left-0 right-0 z-50"
+                        >
+                            <SyncFooter
+                                lastSyncPath={lastSyncPath}
+                                logsCount={logs.length}
+                                uploadingCount={Object.values(syncStatuses).filter(s => s === 'uploading').length}
+                                showLogs={showLogs}
+                                setShowLogs={setShowLogs}
+                                isMinimized={isTerminalMinimized}
+                                setIsMinimized={setIsTerminalMinimized}
+                                onHide={() => setIsFooterVisible(false)}
+                            />
+                        </motion.div>
+                    ) : (
+                        <motion.button
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.1 }}
+                            onClick={() => setIsFooterVisible(true)}
+                            className="fixed bottom-4 left-4 z-50 p-2 bg-indigo-600/50 hover:bg-indigo-600 backdrop-blur-md rounded-full text-white shadow-lg border border-white/20 transition-all"
+                            title="Mostrar Barra de Estado"
+                        >
+                            <ChevronRight className="-rotate-90" size={14} />
+                        </motion.button>
+                    )}
+                </AnimatePresence>
 
                 {/* Glass Control Center Overlay */}
                 <AnimatePresence>
@@ -1033,38 +1058,46 @@ export default function GCPPage() {
         showLogs,
         setShowLogs,
         isMinimized,
-        setIsMinimized
+        setIsMinimized,
+        onHide
     }: any) {
         return (
-            <div className="fixed bottom-0 left-0 right-0 h-10 bg-indigo-950/40 backdrop-blur-md border-t border-white/5 z-50 px-4 flex items-center justify-between safe-area-bottom">
+            <div className="h-7 bg-indigo-950/60 backdrop-blur-xl border-t border-white/10 px-4 flex items-center justify-between safe-area-bottom group/footer shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={onHide}
+                        className="opacity-0 group-hover/footer:opacity-100 p-1 hover:bg-white/10 rounded transition-all text-white/30 hover:text-white"
+                        title="Ocultar Barra"
+                    >
+                        <ChevronRight className="rotate-90" size={12} />
+                    </button>
                     {lastSyncPath ? (
                         <div className="flex items-center gap-2">
-                            <div className={`w-1.5 h-1.5 rounded-full ${uploadingCount > 0 ? 'bg-indigo-400 animate-pulse' : 'bg-green-500'}`} />
-                            <span className="text-[10px] text-white/40 uppercase tracking-tighter font-medium">Sincronizando:</span>
-                            <span className="text-[10px] text-indigo-300/80 font-mono truncate max-w-sm" title={lastSyncPath}>
+                            <div className={`w-1 h-1 rounded-full ${uploadingCount > 0 ? 'bg-indigo-400 animate-pulse' : 'bg-green-500'}`} />
+                            <span className="text-[9px] text-white/40 uppercase tracking-tighter font-medium">Sync:</span>
+                            <span className="text-[9px] text-indigo-300/70 font-mono truncate max-w-sm" title={lastSyncPath}>
                                 {lastSyncPath}
                             </span>
                         </div>
                     ) : (
-                        <span className="text-[10px] text-white/20 uppercase tracking-tighter">Sin carpeta sincronizada</span>
+                        <span className="text-[9px] text-white/20 uppercase tracking-tighter font-mono tracking-widest">Idle</span>
                     )}
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     <button
                         onClick={() => {
                             if (!showLogs) setShowLogs(true)
                             setIsMinimized(!isMinimized)
                         }}
-                        className={`flex items-center gap-2 px-3 py-1 rounded-full transition-all group ${(showLogs && !isMinimized) ? 'bg-indigo-500/20 text-indigo-300' : 'hover:bg-white/5 text-white/40'
+                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-all group ${(showLogs && !isMinimized) ? 'bg-indigo-500/30 text-indigo-300' : 'hover:bg-white/10 text-white/40'
                             }`}
                     >
-                        <RefreshCw size={12} className={uploadingCount > 0 ? 'animate-spin' : ''} />
-                        <span className="text-[10px] uppercase font-bold tracking-widest group-hover:text-white transition-colors">
-                            {uploadingCount > 0 ? `Subiendo ${uploadingCount}` : 'Consola'}
+                        <RefreshCw size={10} className={uploadingCount > 0 ? 'animate-spin' : ''} />
+                        <span className="text-[9px] uppercase font-bold tracking-widest group-hover:text-white transition-colors">
+                            {uploadingCount > 0 ? `${uploadingCount}` : 'Consola'}
                         </span>
-                        {logsCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
+                        {logsCount > 0 && <span className="w-1 h-1 rounded-full bg-indigo-400" />}
                     </button>
                 </div>
             </div>
