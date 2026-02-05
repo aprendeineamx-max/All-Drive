@@ -304,42 +304,143 @@ function FileExplorer({
     )
 }
 
-// Log Terminal Component
-function LogTerminal({ logs, onClose, clearLogs }: { logs: string[], onClose: () => void, clearLogs: () => void }) {
+// Sub-component: Professional Glass Terminal
+function GlassControlCenter({
+    logs,
+    syncStatuses,
+    isMinimized,
+    setIsMinimized,
+    onClose,
+    onClear
+}: {
+    logs: string[],
+    syncStatuses: Record<string, SyncStatus>,
+    isMinimized: boolean,
+    setIsMinimized: (v: boolean) => void,
+    onClose: () => void,
+    onClear: () => void
+}) {
     const scrollRef = React.useRef<HTMLDivElement>(null)
+    const uploadingCount = Object.values(syncStatuses).filter(s => s === 'uploading').length
+    const syncedCount = Object.values(syncStatuses).filter(s => s === 'synced').length
 
     useEffect(() => {
-        if (scrollRef.current) {
+        if (scrollRef.current && !isMinimized) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight
         }
-    }, [logs])
+    }, [logs, isMinimized])
 
     return (
-        <GlassCard className="fixed bottom-0 left-0 right-0 h-48 m-4 border-t border-white/10 flex flex-col shadow-2xl z-40 bg-black/90 backdrop-blur-xl">
-            <div className="flex items-center justify-between p-2 border-b border-white/10 bg-white/5">
-                <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <h3 className="text-xs font-mono uppercase text-white/60">Terminal de Sincronización</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={clearLogs} className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white" title="Limpiar logs">
-                        <RefreshCw size={12} />
-                    </button>
-                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white">
-                        <ChevronRight className="rotate-90" size={14} />
-                    </button>
-                </div>
-            </div>
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-xs text-green-400/80 space-y-1">
-                {logs.length === 0 && <span className="text-white/20 italic">Esperando actividad...</span>}
-                {logs.map((log, i) => (
-                    <div key={i} className="break-all border-l-2 border-transparent hover:border-white/20 pl-2">
-                        <span className="text-white/30 mr-2">[{new Date().toLocaleTimeString()}]</span>
-                        {log}
+        <motion.div
+            layout
+            initial={{ y: 100, opacity: 0 }}
+            animate={{
+                y: 0,
+                opacity: 1,
+                height: isMinimized ? '44px' : '260px',
+                width: isMinimized ? '320px' : '100%',
+            }}
+            className={`fixed bottom-0 ${isMinimized ? 'right-4 mb-4' : 'left-0 right-0 p-4 pt-0'} z-40`}
+        >
+            <GlassCard className="h-full flex flex-col shadow-2xl border-white/10 bg-black/60 backdrop-blur-3xl overflow-hidden p-0">
+                {/* Header */}
+                <div
+                    className="flex items-center justify-between p-3 cursor-pointer bg-white/5 group"
+                    onClick={() => setIsMinimized(!isMinimized)}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="relative">
+                            <div className={`w-2 h-2 rounded-full ${uploadingCount > 0 ? 'bg-indigo-400 animate-pulse' : 'bg-green-500'}`} />
+                            {uploadingCount > 0 && (
+                                <div className="absolute -inset-1 bg-indigo-400/20 rounded-full animate-ping" />
+                            )}
+                        </div>
+                        <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/50 group-hover:text-indigo-300 transition-colors">
+                            {isMinimized ? 'Sincronización en curso' : 'Centro de Control de Sincronización'}
+                        </h3>
+                        {isMinimized && (
+                            <div className="flex items-center gap-2 ml-2">
+                                <div className="flex items-center gap-1 bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                                    <RefreshCw size={10} className="text-indigo-400 animate-spin" />
+                                    <span className="text-[10px] text-indigo-300 font-mono">{uploadingCount}</span>
+                                </div>
+                                <div className="flex items-center gap-1 bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/30">
+                                    <Cloud size={10} className="text-green-400" />
+                                    <span className="text-[10px] text-green-300 font-mono">{syncedCount}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                ))}
-            </div>
-        </GlassCard>
+                    <div className="flex items-center gap-1">
+                        {!isMinimized && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onClear() }}
+                                className="p-1.5 hover:bg-white/10 rounded-lg text-white/30 hover:text-white transition-colors"
+                                title="Limpiar Consola"
+                            >
+                                <RefreshCw size={14} />
+                            </button>
+                        )}
+                        <button
+                            className="p-1.5 hover:bg-white/10 rounded-lg text-white/30 hover:text-white transition-colors"
+                        >
+                            {isMinimized ? <ChevronRight className="-rotate-90" size={16} /> : <ChevronRight className="rotate-90" size={16} />}
+                        </button>
+                        {!isMinimized && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onClose() }}
+                                className="p-1.5 hover:bg-white/10 rounded-lg text-red-500/40 hover:text-red-500 transition-colors"
+                            >
+                                <AlertCircle size={16} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Content */}
+                <AnimatePresence>
+                    {!isMinimized && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="flex-1 flex flex-col min-h-0"
+                        >
+                            <div className="flex items-center gap-4 px-4 py-2 bg-black/40 border-b border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/30 uppercase font-medium">Estado:</span>
+                                    <span className="flex items-center gap-1.5 text-[10px] py-0.5 px-2 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-bold">
+                                        CONECTADO
+                                    </span>
+                                </div>
+                                <div className="h-3 w-px bg-white/10" />
+                                <div className="flex items-center gap-4 text-[10px]">
+                                    <span className="text-indigo-300">En espera: {Object.values(syncStatuses).filter(s => s === 'pending').length}</span>
+                                    <span className="text-indigo-400">Subiendo: {uploadingCount}</span>
+                                    <span className="text-green-400">Completados: {syncedCount}</span>
+                                </div>
+                            </div>
+                            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed custom-scrollbar selection:bg-indigo-500/30">
+                                {logs.length === 0 && (
+                                    <div className="h-full flex flex-col items-center justify-center text-white/10 gap-2 select-none">
+                                        <Cloud size={32} />
+                                        <p className="italic">Escuchando eventos de sincronización...</p>
+                                    </div>
+                                )}
+                                {logs.map((log, i) => (
+                                    <div key={i} className="flex gap-4 group py-0.5 px-2 hover:bg-white/5 rounded transition-colors border-l-2 border-transparent hover:border-indigo-500/40">
+                                        <span className="text-white/20 select-none w-16 tabular-nums">{new Date().toLocaleTimeString()}</span>
+                                        <span className={`${log.includes('[ERROR]') ? 'text-red-400' : log.includes('[WATCHER]') ? 'text-indigo-300' : 'text-zinc-400'} break-all`}>
+                                            {log}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </GlassCard>
+        </motion.div>
     )
 }
 
@@ -366,9 +467,11 @@ export default function GCPPage() {
     // Notifications
     const [toasts, setToasts] = useState<{ id: string, message: string, type: 'success' | 'error' | 'info' }[]>([])
 
-    // Logs
+    // Logs & Sync Status
     const [logs, setLogs] = useState<string[]>([])
     const [showLogs, setShowLogs] = useState(false)
+    const [isTerminalMinimized, setIsTerminalMinimized] = useState(false)
+    const [syncStatuses, setSyncStatuses] = useState<Record<string, SyncStatus>>({})
 
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Math.random().toString(36).substr(2, 9)
@@ -577,20 +680,17 @@ export default function GCPPage() {
                     </AnimatePresence>
                 </div>
 
-                {/* Log Terminal Overlay */}
+                {/* Glass Control Center Overlay */}
                 <AnimatePresence>
                     {showLogs && (
-                        <motion.div
-                            initial={{ y: 200, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            exit={{ y: 200, opacity: 0 }}
-                        >
-                            <LogTerminal
-                                logs={logs}
-                                onClose={() => setShowLogs(false)}
-                                clearLogs={() => setLogs([])}
-                            />
-                        </motion.div>
+                        <GlassControlCenter
+                            logs={logs}
+                            syncStatuses={syncStatuses}
+                            isMinimized={isTerminalMinimized}
+                            setIsMinimized={setIsTerminalMinimized}
+                            onClose={() => setShowLogs(false)}
+                            onClear={() => setLogs([])}
+                        />
                     )}
                 </AnimatePresence>
             </>
@@ -793,20 +893,17 @@ export default function GCPPage() {
                 )}
             </AnimatePresence>
 
-            {/* Log Terminal Overlay (Global for Dashboard) */}
+            {/* Glass Control Center Overlay (Global for Dashboard) */}
             <AnimatePresence>
                 {showLogs && (
-                    <motion.div
-                        initial={{ y: 200, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        exit={{ y: 200, opacity: 0 }}
-                    >
-                        <LogTerminal
-                            logs={logs}
-                            onClose={() => setShowLogs(false)}
-                            clearLogs={() => setLogs([])}
-                        />
-                    </motion.div>
+                    <GlassControlCenter
+                        logs={logs}
+                        syncStatuses={syncStatuses}
+                        isMinimized={isTerminalMinimized}
+                        setIsMinimized={setIsTerminalMinimized}
+                        onClose={() => setShowLogs(false)}
+                        onClear={() => setLogs([])}
+                    />
                 )}
             </AnimatePresence>
         </div>
