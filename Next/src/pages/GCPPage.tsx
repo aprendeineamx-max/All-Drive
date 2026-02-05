@@ -516,41 +516,50 @@ function FileExplorer({
                 )}
 
                 {/* Toolbar */}
-                <div className="flex items-center gap-3 bg-white/5 p-2 rounded-lg border border-white/10">
-                    <Button size="sm" variant="secondary" onClick={handleUploadFile} disabled={actionLoading}>
-                        <UploadCloud size={16} className="mr-2" />
-                        Subir Archivo
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={handleUploadFolder} disabled={actionLoading}>
-                        <Folder size={16} className="mr-2" />
-                        Subir Carpeta
-                    </Button>
-                    <div className="h-6 w-px bg-white/20 mx-1" />
-                    <Button size="sm" variant="ghost" onClick={handleStartSync} disabled={actionLoading} className="text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/20">
-                        <RefreshCw size={16} className="mr-2" />
-                        Sincronizar Carpeta Local
-                    </Button>
-                    {lastSyncPath && (
-                        <Button size="sm" variant="ghost" onClick={handleStopSync} disabled={actionLoading} className="text-red-400 hover:text-red-300 hover:bg-red-500/20">
-                            <AlertCircle size={16} className="mr-2" />
-                            Detener Sincronización
+                <div className="flex flex-wrap items-center gap-2 bg-white/5 p-2 rounded-lg border border-white/10">
+                    {/* Upload Actions */}
+                    <div className="flex items-center gap-1">
+                        <Button size="sm" variant="secondary" onClick={handleUploadFile} disabled={actionLoading}>
+                            <UploadCloud size={14} />
+                            <span className="hidden sm:inline ml-1">Subir Archivo</span>
                         </Button>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={async () => {
-                        if (window.confirm('⚠️ ¿Estás seguro de eliminar TODO el contenido de este bucket?\n\nEsta acción NO se puede deshacer.')) {
-                            setActionLoading(true)
-                            onToast('Limpiando bucket...', 'info')
-                            await electronAPI.gcp.cleanBucket(bucket)
-                            loadObjects(bucket, currentPrefix)
-                            onToast('Bucket limpio', 'success')
-                            setActionLoading(false)
-                        }
-                    }} disabled={actionLoading} className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/20">
-                        <Trash2 size={16} className="mr-2" />
-                        Limpiar Bucket
-                    </Button>
+                        <Button size="sm" variant="secondary" onClick={handleUploadFolder} disabled={actionLoading}>
+                            <Folder size={14} />
+                            <span className="hidden sm:inline ml-1">Subir Carpeta</span>
+                        </Button>
+                    </div>
 
-                    <div className="ml-auto flex items-center gap-3 pr-2">
+                    <div className="h-6 w-px bg-white/20 hidden sm:block" />
+
+                    {/* Sync Actions */}
+                    <div className="flex items-center gap-1">
+                        <Button size="sm" variant="ghost" onClick={handleStartSync} disabled={actionLoading} className="text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/20">
+                            <RefreshCw size={14} />
+                            <span className="hidden md:inline ml-1">Sincronizar</span>
+                        </Button>
+                        {lastSyncPath && (
+                            <Button size="sm" variant="ghost" onClick={handleStopSync} disabled={actionLoading} className="text-red-400 hover:text-red-300 hover:bg-red-500/20">
+                                <AlertCircle size={14} />
+                                <span className="hidden md:inline ml-1">Detener</span>
+                            </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={async () => {
+                            if (window.confirm('⚠️ ¿Estás seguro de eliminar TODO el contenido de este bucket?\n\nEsta acción NO se puede deshacer.')) {
+                                setActionLoading(true)
+                                onToast('Limpiando bucket...', 'info')
+                                await electronAPI.gcp.cleanBucket(bucket)
+                                loadObjects(bucket, currentPrefix)
+                                onToast('Bucket limpio', 'success')
+                                setActionLoading(false)
+                            }
+                        }} disabled={actionLoading} className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/20">
+                            <Trash2 size={14} />
+                            <span className="hidden md:inline ml-1">Limpiar</span>
+                        </Button>
+                    </div>
+
+                    {/* Right Side Controls */}
+                    <div className="ml-auto flex items-center gap-2">
                         <label className="flex items-center gap-2 cursor-pointer group">
                             <span className="text-[11px] text-white/40 group-hover:text-white/60 transition-colors uppercase font-medium tracking-wider">
                                 Auto-inicio
