@@ -17,17 +17,16 @@ class FileWatcher(FileSystemEventHandler):
         self.upload_thread = None
 
     def on_created(self, event):
-        if not event.is_directory:
-            self._queue_upload(event.src_path, "created")
+        self._queue_upload(event.src_path, "created", is_dir=event.is_directory)
 
     def on_modified(self, event):
         if not event.is_directory:
             self._queue_upload(event.src_path, "modified")
 
-    def _queue_upload(self, file_path, action):
-        """Add file to upload queue"""
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            self.upload_queue.put((file_path, action))
+    def _queue_upload(self, file_path, action, is_dir=False):
+        """Add file or folder to upload queue"""
+        if os.path.exists(file_path):
+            self.upload_queue.put((file_path, action, is_dir))
             if self.callback:
                 self.callback(f"Detected {action}: {os.path.basename(file_path)}")
 
@@ -35,7 +34,7 @@ class FileWatcher(FileSystemEventHandler):
         """Worker thread to process upload queue"""
         while self.running:
             try:
-                file_path, action = self.upload_queue.get(timeout=1)
+                file_path, action, is_dir = self.upload_queue.get(timeout=1)
                 
                 # Wait a bit to ensure file is fully written
                 time.sleep(2)
@@ -44,16 +43,24 @@ class FileWatcher(FileSystemEventHandler):
                     relative_path = os.path.relpath(file_path, self.watch_dir)
                     
                     if self.callback:
-                        self.callback(f"Uploading: {relative_path}")
+                        self.callback(f"Syncing: {relative_path}")
                     
-                    success = self.s3_handler.upload_file(
-                        self.bucket_name, 
-                        file_path, 
-                        relative_path
-                    )
+                    if is_dir:
+                        # Create folder placeholder
+                        success = self.s3_handler.create_folder(
+                            self.bucket_name,
+                            relative_path
+                        )
+                    else:
+                        # Upload file
+                        success = self.s3_handler.upload_file(
+                            self.bucket_name, 
+                            file_path, 
+                            relative_path
+                        )
                     
                     if success and self.callback:
-                        self.callback(f"✓ Uploaded: {relative_path}")
+                        self.callback(f"✓ Synced: {relative_path}")
                     elif self.callback:
                         self.callback(f"✗ Failed: {relative_path}")
                 

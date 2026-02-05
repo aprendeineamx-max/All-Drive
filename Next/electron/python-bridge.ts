@@ -422,6 +422,9 @@ except Exception as e:
         const code = `
 ${getAuthHeader()}
 import json, sys, time, os
+# Add Legacy folder to path for file_watcher module
+legacy_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), 'Legacy')
+sys.path.insert(0, legacy_path)
 sys.path.insert(0, '.')
 
 def log_event(file, status, message=""):
@@ -442,6 +445,26 @@ try:
         def __init__(self, root_path):
             self.client = storage.Client()
             self.root_path = root_path
+            self.bucket = None
+
+        def create_folder(self, bucket_name, folder_path):
+            try:
+                # Ensure folder path ends with slash
+                if not folder_path.endswith('/'):
+                    folder_path += '/'
+                
+                # Normalize path: prepend root folder name
+                folder_name = os.path.basename(self.root_path)
+                final_path = f"{folder_name}/{folder_path}".replace(os.sep, '/')
+                
+                self.bucket = self.client.bucket(bucket_name)
+                blob = self.bucket.blob(final_path)
+                blob.upload_from_string('') # Empty content for directory placeholder
+                # log_event(str(final_path), "created_folder")
+                return True
+            except Exception as e:
+                log_event(str(folder_path), "error", str(e))
+                return False
 
         def upload_file(self, bucket_name, file_path, object_name=None):
             # Normalize path: ensure it's relative to root_path and uses Forward Slashes for GCS
@@ -464,12 +487,41 @@ try:
                 log_event(file_path, "error", str(e))
                 return False
 
+    def scan_and_upload(adapter, bucket_name, root_path):
+        print(json.dumps({"type": "sync_event", "status": "scanning", "message": "Iniciando escaneo inicial..."}))
+        sys.stdout.flush()
+        count = 0
+        try:
+            # Sync root folder itself as a placeholder if active
+            adapter.create_folder(bucket_name, "")
+            
+            for root, dirs, files in os.walk(root_path):
+                # 1. Sync Directories (Empty folders support)
+                for d in dirs:
+                    full_dir_path = os.path.join(root, d)
+                    rel_dir_path = os.path.relpath(full_dir_path, root_path)
+                    adapter.create_folder(bucket_name, rel_dir_path)
+
+                # 2. Sync Files
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    # Simple check: upload all (can be optimized later with hash check)
+                    adapter.upload_file(bucket_name, full_path)
+                    count += 1
+            print(json.dumps({"type": "sync_event", "status": "scan_complete", "message": f"Escaneo inicial completado. {count} archivos procesados."}))
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"Error en escaneo inicial: {str(e)}")
+
     print(json.dumps({'success': True, 'message': 'Supervisor started'})) 
     sys.stdout.flush()
 
     root_path = r'${localPath}'
     adapter = GCPAdapter(root_path)
     
+    # Perform initial scan before starting watcher
+    scan_and_upload(adapter, '${bucketName}', root_path)
+
     def watcher_callback(msg):
         if "Detected" in msg:
             parts = msg.split(':')
@@ -726,7 +778,7 @@ except Exception as e:
     print(json.dumps({'success': False, 'error': str(e)}))
 `
         return runPythonCode(code)
-    })
+    });
 
     // Clean Bucket (Delete ALL objects)
     ipcMain.handle('gcp:cleanBucket', async (event, bucketName: string) => {
@@ -761,7 +813,7 @@ def clean_bucket():
 clean_bucket()
 `
         return runPythonCode(code, (msg) => event.sender.send('gcp:log', msg))
-    })
+    });
 
 
     // Obtener sesión guardada
