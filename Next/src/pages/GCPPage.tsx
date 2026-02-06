@@ -339,7 +339,7 @@ function FileExplorer({
                             finalFiles.push({
                                 ...gcs,
                                 name: cleanG, // Use FULL GCS PATH
-                                syncState: 'synced'
+                                syncState: 'cloud-only'
                             })
                         }
                     })

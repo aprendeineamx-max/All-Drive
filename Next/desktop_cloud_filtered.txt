@@ -1,0 +1,40 @@
+Desktop/Antigravity (1).exe
+Desktop/Antigravity Control Center.lnk
+Desktop/Antigravity.lnk
+Desktop/AzureAdmin.rdp
+Desktop/CLONE_CIVER.bat
+Desktop/Docker Desktop.lnk
+Desktop/Dolphin - Chrome.lnk
+Desktop/FIX_USER_WORKSPACE.bat
+Desktop/Ghost_Agent_v7.0_PRODUCTION_READY.zip
+Desktop/Ratiborus.KMS.Tools.08.03.2025 - XYZ.rar
+Desktop/SuiteIA.code-workspace
+Desktop/TelegramBot.zip
+Desktop/ULTIMATE_FIX.bat
+Desktop/Visual Studio Code.lnk
+Desktop/VultrDriveDesktop-Portable.zip
+Desktop/accounts_response.json
+Desktop/antigravity-diagnostics-20260122-095401.zip
+Desktop/antigravity-diagnostics-20260122-100145.zip
+Desktop/antigravity-run-autofix.log
+Desktop/antigravity-run.log
+Desktop/antigravity_debug.log
+Desktop/build_log.txt
+Desktop/build_log_attempt_3.txt
+Desktop/build_log_attempt_4.txt
+Desktop/build_log_attempt_5.txt
+Desktop/build_log_full.txt
+Desktop/build_stabilized_log.txt
+Desktop/capture_debug.log
+Desktop/connect_zed_cloud.bat
+Desktop/desktop.ini
+Desktop/libgit2_log.txt
+Desktop/rclone_debug-2026-01-06T02-25-07.697.txt
+Desktop/rclone_debug-2026-01-06T02-38-24.639.txt
+Desktop/rclone_debug-2026-01-06T02-57-03.762.txt
+Desktop/rclone_debug-2026-01-06T03-31-59.733.txt
+Desktop/rclone_debug-2026-01-06T04-12-02.580.txt
+Desktop/rclone_debug-2026-01-06T15-11-28.392.txt
+Desktop/rclone_debug-2026-02-05T05-06-37.619.txt
+Desktop/rclone_debug.txt
+Desktop/webrtc_log.txt

@@ -43,7 +43,7 @@ class FileWatcher(FileSystemEventHandler):
                 # Wait a bit to ensure file is fully written
                 time.sleep(2)
                 
-                if os.path.exists(file_path):
+                if action == "deleted" or os.path.exists(file_path):
                     relative_path = os.path.relpath(file_path, self.watch_dir)
                     
                     if self.callback:

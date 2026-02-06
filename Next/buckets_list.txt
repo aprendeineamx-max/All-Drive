@@ -1,0 +1,4 @@
+discos-azure-allison-everest
+respaldo-eastern-kit-482604-e0
+run-sources-eastern-kit-482604-e0-us-central1
+sincronizacion-automatica-de-vm-azureadmin-virtualbuk
